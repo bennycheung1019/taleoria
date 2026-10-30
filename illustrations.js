@@ -32,6 +32,7 @@
   function subject(target) {
     if (!snapshot || scope !== scopeOf(current())) return null;
     if (target.kind === 'scene') return target.subject === snapshot.scene.subject ? snapshot.scene : null;
+    if (target.kind === 'moment') return (snapshot.moments || []).find(p => p.subject === target.subject);
     return (target.kind === 'portrait' ? snapshot.characters : snapshot.items || []).find(p => p.id === target.subject);
   }
   function rowsFor(target) {
@@ -45,7 +46,7 @@
     if (rows[0]?.status === 'error') return rows[0].error;
     return completed(target) ? '圖片已保存，可點開檢視' : '尚未生成圖片';
   }
-  function report(message) {announcement.textContent = message; if (typeof notify === 'function') notify(message);}
+  function report(message) {if(/signal.*timed out|aborted due to timeout|Failed to fetch|Load failed/i.test(message))message='圖片連線暫時中斷。已提交的圖片會繼續處理，請稍後檢視。';announcement.textContent = message; if (typeof notify === 'function') notify(message);}
   async function urlFor(row, capturedScope) {
     if (urls.has(row.id)) return urls.get(row.id);
     if (!downloads.has(row.id)) {
@@ -85,7 +86,7 @@
   const empty = node('div', 'media-empty', '尚未有圖片，按下生成來繪製。');
   const viewerStatus = node('p', 'subtle media-viewer-status'); viewerStatus.setAttribute('role', 'status');
   const viewerActions = node('div', 'media-viewer-actions');
-  const viewerGenerate = node('button', 'secondary', '生成圖片'); viewerGenerate.type = 'button';
+  const viewerGenerate = node('button', 'secondary', '生成圖片'); viewerGenerate.type = 'button'; viewerGenerate.title = '生成目前選取的圖片';
   const download = node('a', 'quiet-link', '下載圖片 ↗'); download.hidden = true;
   viewerActions.append(viewerGenerate, download);
   const details = node('details', 'media-custom'); details.append(node('summary', '', '調整畫面描述'));
@@ -110,6 +111,7 @@
     if (!info) {viewer.close(); return;}
     viewerTitle.textContent = info.name; viewerStatus.textContent = statusFor(target);
     viewerGenerate.disabled = blocked(); viewerGenerate.textContent = completed(target) ? '重新生成' : '生成圖片';
+    viewerGenerate.title = (completed(target) ? '重新生成' : '生成') + info.name + '圖片';viewerGenerate.setAttribute('aria-label',viewerGenerate.title);
     const row = completed(target); viewerImage.hidden = !row; empty.hidden = Boolean(row); download.hidden = !row;
     if (!row) {viewerImage.removeAttribute('src'); download.removeAttribute('href'); return;}
     const capturedScope = scope, src = await urlFor(row, capturedScope);
@@ -134,6 +136,7 @@
     if (!entry) {
       const tools = node('div', 'media-tools ' + cls);
       const draw = imageButton('generate', '生成圖片'), view = imageButton('view', '檢視圖片');
+      if (target.kind === 'moment') draw.append(node('span', '', '描繪這一刻'));
       if (text) view.append(node('span', '', '檢視圖片'));
       const status = node('span', 'sr-only'); status.setAttribute('role', 'status');
       tools.append(draw, view, status); host.append(tools);
@@ -169,6 +172,12 @@
       const art = banner.querySelector('.scene-art'); if (art) painting.push(decorate(art, target, version));
       const reserved = banner.querySelector('.image-reserved'); if (reserved) reserved.hidden = true;
       banner.classList.toggle('has-illustration', Boolean(completed(target)));
+    }
+    for (const holder of document.querySelectorAll('.turn-illustration[data-media-key]')) {
+      const target = {kind:'moment', subject:holder.dataset.mediaKey};
+      toolbar(holder, target, 'media-moment-tools');
+      const art = holder.querySelector('.turn-illustration-art');
+      if (art) {art.hidden = !completed(target);clickable(art,target);painting.push(decorate(art,target,version));}
     }
     for (const holder of document.querySelectorAll('.portrait, .character-portrait')) {
       const target = {kind:'portrait', subject:current().pc.id};

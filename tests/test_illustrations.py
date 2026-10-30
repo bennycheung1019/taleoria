@@ -61,6 +61,41 @@ class IllustrationTests(unittest.TestCase):
         self.assertNotIn('inner_life', serialized)
         self.assertEqual(self.service.image(row['id']), base64.b64decode(PNG))
 
+    def test_historical_moment_draws_its_saved_story_not_the_current_scene(self):
+        self.engine.record_gm_reply('我伸手接住燈籠。', {'narration':'哈克（Hark）遞給你一盞紅色燈籠。', 'changes':{}}, 'moment-one', 0)
+        self.engine.record_gm_reply('我走開。', {'narration':'你在雨中向前走。', 'changes':{}}, 'moment-two', 1)
+        before, history = self.engine.state(), self.engine.history()
+        row = self.complete(self.request(kind='moment', subject='1'))
+        self.assertEqual(row['status'], 'done')
+        source = self.calls[0]['source']
+        self.assertEqual(source['narration'], '哈克（Hark）遞給你一盞紅色燈籠。')
+        self.assertEqual(source['action'], '我伸手接住燈籠。')
+        self.assertNotIn('你在雨中向前走', json.dumps(source, ensure_ascii=False))
+        self.assertNotIn('PRIVATE-SECRET', json.dumps(source))
+        self.assertNotIn('UNSEEN-CHARACTER', json.dumps(source))
+        self.assertEqual(row['revision'], 1)
+        self.assertEqual(len(self.service.snapshot()['moments']), 2)
+        self.assertEqual(self.engine.state(), before)
+        self.assertEqual(self.engine.history(), history)
+        again = self.service.submit(self.request(kind='moment', subject='1', request_id='moment-cache'))
+        self.assertEqual(again['id'], row['id'])
+        self.assertTrue(self.engine.verify())
+
+    def test_moment_rejects_future_missing_and_client_supplied_story(self):
+        for subject in ('1', '0', '-1', '../1', [], None):
+            with self.subTest(subject=subject), self.assertRaises(RuleError):
+                self.service.submit(self.request(kind='moment', subject=subject, narration='invented'))
+        self.assertEqual(self.calls, [])
+
+    def test_moment_renderer_uses_landscape_and_final_narration(self):
+        self.engine.record_gm_reply('我試著飛。', {'narration':'你仍站在地上。', 'changes':{}}, 'moment-one', 0)
+        row = self.complete(self.request(kind='moment', subject='1'))
+        self.assertEqual(row['status'], 'done')
+        self.assertIn('narrative scene', self.calls[0]['prompt'])
+        with patch('kobold_rpg.illustrations.http_json', return_value={'images':[PNG]}) as call:
+            self.service._render(self.calls[0])
+        self.assertEqual((call.call_args.args[1]['width'], call.call_args.args[1]['height']), (1024,768))
+
     def test_unseen_character_is_not_eligible_for_portrait(self):
         with self.assertRaises(RuleError):
             self.service.submit(self.request(kind='portrait', subject='anya'))

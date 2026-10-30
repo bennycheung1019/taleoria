@@ -1,4 +1,10 @@
 .media-tools{display:flex;align-items:center;gap:6px;z-index:4}
+.media-moment-tools{margin-top:16px}
+.turn-illustration-art{position:relative;overflow:hidden;aspect-ratio:4/3;max-height:420px;margin-top:16px;border-radius:12px;background:var(--soft);cursor:zoom-in}
+.turn-illustration-art[hidden]{display:none}
+.turn-illustration-art .illustration-cover{object-fit:contain}
+.story-turn,.sent-action{scroll-margin-top:16px}
+.power-line[title],.reading-card h4[title]{cursor:help}
 .media-button{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-width:34px;height:34px;padding:7px;border:1px solid var(--line);border-radius:9px;background:var(--card);color:var(--ink);font:inherit;font-size:11px;line-height:1;box-shadow:0 2px 8px #122d2512;white-space:nowrap}
 .media-button svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round;flex-shrink:0}
 .media-button:hover:not(:disabled){border-color:var(--gold);background:var(--soft)}

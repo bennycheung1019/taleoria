@@ -16,27 +16,30 @@ function card(parent, title, text, cls='') {const node=el('article','reading-car
 function notify(text) {$('toast').textContent=text;$('toast').hidden=false;clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').hidden=true,4500);}
 function error(text) {$('pageNotice').textContent=text;$('pageNotice').hidden=false;}
 function clearError() {$('pageNotice').hidden=true;}
+function connectionInterrupted(e) {return e instanceof TypeError || ['TimeoutError','AbortError'].includes(e?.name) || e?.retryable === true;}
 async function api(path, body, headers={}) {
   const response=await (window.TaleoriaConnection?.fetch||fetch)(path,{method:body?'POST':'GET',headers:{'Content-Type':'application/json','X-RPG-Token':window.RPG_TOKEN,'X-RPG-Session':state?.session_id||'',...headers},body:body?JSON.stringify({...body,session_id:state?.session_id}):undefined});
-  let data;try{data=await response.json();}catch(e){throw Error('連線回應不完整。請重新整理，取回這次生成的結果。');}
+  if([408,502,503,504].includes(response.status)){const e=Error('遊戲電腦連線暫時中斷，請稍後再試。');e.retryable=true;throw e;}
+  let data;try{data=await response.json();}catch(e){if(connectionInterrupted(e))throw e;const incomplete=Error('連線回應不完整，請重新整理取回結果。');incomplete.retryable=true;throw incomplete;}
   if(!response.ok)throw Error(response.status===403?'頁面已更新，請重新整理後繼續。':(data.error||'這次操作沒有完成，請再試一次。'));
   return data;
 }
 function setBusy(value) {busy=value;document.querySelectorAll('[data-mutation], #useItem').forEach(b=>b.disabled=value);$('actionInput').disabled=value;$('sendAction').disabled=value||!state||!!state?.setup_required;if($('saveFile'))$('saveFile').disabled=value||!state||!!state?.setup_required;$('syncHint').hidden=!syncing||value;document.body.setAttribute('aria-busy',String(value));}
 
-async function run(fn) {if(busy)return;clearError();setBusy(true);try{await fn();}catch(e){error(e.message);}finally{setBusy(false);}}
+async function run(fn) {if(busy)return;clearError();setBusy(true);try{await fn();}catch(e){error(connectionInterrupted(e)?'與遊戲電腦的連線暫時中斷。進度已保留；請重新整理以取回結果。':e.message);}finally{setBusy(false);}}
 function go(page) {if(location.hash==='#'+page)route();else location.hash=page;}
 function route() {let page=location.hash.slice(1)||'adventure';if(!pages.includes(page))page='adventure';if(!state&&window.TaleoriaConnection?.needsPairing())page='settings';if(state?.setup_required&&!['create','settings'].includes(page))page='create';document.documentElement.dataset.page=page;$('cancelCreate').hidden=!!state?.setup_required;document.querySelector('.sidebar').hidden=!state||page==='create'||!!state?.setup_required;renderTaskLink();document.querySelectorAll('.page').forEach(p=>p.hidden=p.id!=='page-'+page);document.querySelectorAll('[data-route]').forEach(a=>{a.classList.toggle('active',a.dataset.route===page);a.setAttribute('aria-current',a.dataset.route===page?'page':'false');});window.scrollTo({top:0,behavior:'instant'});}
 function playerBackground() {return state.pc.background||`你目前確認的本領是${state.pc.capabilities.join('、')}。${state.pc.goal?'你的抱負：'+state.pc.goal+'。':''}`;}
 function items() {return Object.entries(state.pc.inventory).filter(([,quantity])=>quantity>0).map(([id,quantity])=>({id,quantity,...(state.item_catalog?.[id]||itemDefaults[id]||{name:id.replaceAll('_',' '),description:'已記錄的普通隨身物品。'})}));}
 function powers() {const learned=state.pc.spells.map(id=>({id,...state.abilities[id]}));return [...learned,...(state.pc.known_powers||[]).filter(power=>!learned.some(item=>item.id===power.id))];}
+function powerHint(node,power) {const text=[power.effect||power.description,power.limits?'限制：'+power.limits:''].filter(Boolean).join('\n')||'尚未記錄能力說明。';node.title=text;node.tabIndex=0;node.setAttribute('aria-label',power.name+'：'+text);return node;}
 function title() {return state.contract.title||'一段未完的冒險';}
 function renderProfile() {
   $('playerName').textContent=state.pc.name;$('playerRole').textContent=[state.pc.species,state.pc.role].filter(Boolean).join(' · ')||'自由旅人';
   $('portraitInitial').textContent=state.pc.name.trim().slice(0,1);$('sideLocation').textContent=state.locations[state.pc.location].name;
   const background=playerBackground();$('sideBackground').textContent=background.length>110?background.slice(0,110)+'…':background;
   $('sideSkills').replaceChildren();for(const skill of state.pc.capabilities)$('sideSkills').append(el('span','tag',skill));
-  $('sidePowers').replaceChildren();if(!powers().length)add($('sidePowers'),'p','','尚未擁有超自然能力');for(const power of powers())add($('sidePowers'),'div','power-line','✧ '+power.name);
+  $('sidePowers').replaceChildren();if(!powers().length)add($('sidePowers'),'p','','尚未擁有超自然能力');for(const power of powers())powerHint(add($('sidePowers'),'div','power-line','✧ '+power.name),power);
   $('sideCondition').textContent=state.pc.alive?(state.pc.conditions.join('、')||'尚無已記錄的異常狀況'):'已死亡';
   $('bagCount').textContent=items().length+' 種物品';
   const sheet=$('characterSheet');sheet.replaceChildren();const profile=card(sheet,state.pc.name,playerBackground(),'wide character-intro');
@@ -45,11 +48,11 @@ function renderProfile() {
   card(sheet,'目前狀況',state.pc.alive?(state.pc.conditions.join('、')||'存活，尚無已記錄的異常。'):'已死亡。');
   const skills=card(sheet,'擅長的事','');tags(skills,state.pc.capabilities);
   const ability=card(sheet,'超自然能力','');if(!powers().length)add(ability,'p','subtle','尚未擁有。故事中的宣告不會自行賦予新能力。');
-  for(const power of powers()){add(ability,'h4','',power.name);add(ability,'p','prose',power.effect);}
+  for(const power of powers()){powerHint(add(ability,'h4','',power.name),power);add(ability,'p','prose',power.effect||power.description||'');}
   const goals=card(sheet,'隨身物品','');tags(goals,items().map(i=>i.name+' × '+i.quantity));
 }
 function renderTimeline(parent, rows, all=false) {parent.replaceChildren();const selected=all?rows:rows.slice(-6);if(!selected.length){add(parent,'p','empty-state','故事已準備好。描述你想做的事，踏出第一步。');return;}
-  for(const row of selected){const turn=el('article','story-turn');if(row.declaration)add(turn,'div','player-line',row.declaration);add(turn,'div','turn-caption',({approved:'故事',routine:'眼前所見',blocked:'這次嘗試',clarify:'尚待釐清',rewound:'回到較早的時刻',maintenance:'世界紀錄更新'}[row.status]||'故事'));add(turn,'div','prose',row.narration);parent.append(turn);}
+  for(const row of selected){const turn=el('article','story-turn');turn.dataset.revision=String(row.revision);if(row.declaration)add(turn,'div','player-line',row.declaration);add(turn,'div','turn-caption',({approved:'故事',routine:'眼前所見',blocked:'這次嘗試',clarify:'尚待釐清',rewound:'回到較早的時刻',maintenance:'世界紀錄更新'}[row.status]||'故事'));add(turn,'div','prose',row.narration);if(row.narration&&row.status!=='maintenance'){const moment=add(turn,'div','turn-illustration','');moment.dataset.mediaKey=String(row.revision);add(moment,'div','turn-illustration-art','');}parent.append(turn);}
 }
 function renderAdventure() {$('adventureTitle').textContent=title();$('campaignGenre').textContent=state.contract.genre+' · '+(state.contract.play_form||'自由探索');$('sceneName').textContent=state.locations[state.pc.location].name;$('sceneDescription').textContent=state.locations[state.pc.location].description;document.querySelector('.scene-banner').dataset.mediaKey=state.pc.location;document.querySelector('.portrait').dataset.mediaKey=state.pc.id;$('chapterCount').textContent=history.length?'已留下 '+history.length+' 段記錄':'第一幕';renderTimeline($('storyTimeline'),history);renderTimeline($('journalTimeline'),history,true);}
 function svgElement(tag,attributes={},text=''){const node=document.createElementNS('http://www.w3.org/2000/svg',tag);for(const [key,value] of Object.entries(attributes))node.setAttribute(key,value);node.textContent=text;return node;}
@@ -107,7 +110,7 @@ async function refreshPanels(epoch,sessionId,minimum) {if(epoch!==panelsEpoch)re
 function queuePanels(minimum,views) {if(views?.status==='ready'){panelState('ready');return;}const epoch=++panelsEpoch;panelState('pending');$('autosaveText').textContent='故事已保存 · 其他資料更新中';requestAnimationFrame(()=>refreshPanels(epoch,state.session_id,minimum));}
 async function retryPanels() {if(busy)return;panelState('pending');try{await api('/api/updates/retry',{});queuePanels(state.revision);}catch(e){panelState('error');error(e.message);}}
 async function load() {++panelsEpoch;const data=await api('/api/session');const oldSession=state?.session_id;history=data.history;if(data.state){state=data.state;renderAdventure();renderPanels();}else{applyFrame(data.frame);if(data.panel_snapshot){state=data.panel_snapshot;renderPanels(data.views.status);}renderAdventure();if(data.views.status==='error'){panelState('error');$('autosaveText').textContent='故事已保存 · 其他資料未完成';}else queuePanels(data.frame.revision);}if(oldSession&&oldSession!==state.session_id){intent=null;worldDraft=null;selectedMapId=null;$('actionInput').value='';}setBusy(busy);if(state?.setup_required)go('create');else route();}
-function scrollLatest() {if((location.hash.slice(1)||'adventure')!=='adventure')return;requestAnimationFrame(()=>{const panel=document.querySelector('.story-panel');panel.scrollTop=panel.scrollHeight;if(matchMedia('(max-width:850px)').matches){const target=$('thinking').hidden?$('storyTimeline').lastElementChild:$('thinking');target?.scrollIntoView({block:'nearest',behavior:'smooth'});}});}
+function scrollLatest() {if((location.hash.slice(1)||'adventure')!=='adventure')return;requestAnimationFrame(()=>{const turn=$('storyTimeline').lastElementChild;const target=$('thinking').hidden?(turn?.querySelector('.player-line')||turn):($('thinking').querySelector('.sent-action')||$('thinking'));target?.scrollIntoView({block:'start',behavior:'instant'});});}
 function progressView(parent) {parent.replaceChildren();const box=add(parent,'div','progress-display','');const head=add(box,'div','progress-heading','');const name=add(head,'strong','','準備中');const percent=add(head,'span','','0%（估計）');const bar=add(box,'progress','','');bar.max=100;bar.value=0;bar.setAttribute('aria-label','處理進度（估計）');const detail=add(box,'p','subtle','正在連接主持人…');return {name,percent,bar,detail};}
 function savedJob() {try{return JSON.parse(sessionStorage.getItem(pendingJobKey+(window.TaleoriaConnection?.scope()||'')));}catch(e){return null;}}
 function storeJob(value) {try{if(value)sessionStorage.setItem(pendingJobKey+(window.TaleoriaConnection?.scope()||''),JSON.stringify(value));else sessionStorage.removeItem(pendingJobKey+(window.TaleoriaConnection?.scope()||''));}catch(e){}}
@@ -126,11 +129,11 @@ async function trackedApi(path,body,parent) {
   let settled=false;
   try {
     // Reusing this identifier after reload attaches to the same server task.
-    for(;;){try{await api(path,metadata.body,{'Prefer':'respond-async'});break;}catch(e){if(!(e instanceof TypeError)) {settled=true;throw e;}view.detail.textContent='連線暫時中斷，正在重新連接同一次生成…';await pause();}}
+    for(;;){try{await api(path,metadata.body,{'Prefer':'respond-async'});break;}catch(e){if(!connectionInterrupted(e)) {settled=true;throw e;}view.detail.textContent='連線暫時中斷，正在重新連接同一次生成…';await pause();}}
     for(;;){
       let job;
       try{job=await api('/api/jobs?request_id='+encodeURIComponent(request));}
-      catch(e){if(!(e instanceof TypeError)){settled=true;throw e;}view.detail.textContent='連線暫時中斷，生成會在伺服器繼續；正在重新連接…';await pause();continue;}
+      catch(e){if(!connectionInterrupted(e)){settled=true;throw e;}view.detail.textContent='連線暫時中斷，生成會在伺服器繼續；正在重新連接…';await pause();continue;}
       const p=job.progress;
       view.name.textContent=p.stage+' · '+p.phase;view.percent.textContent=p.percent+'%'+(p.estimated?'（估計）':'');view.bar.value=p.percent;renderTaskLink(p);
       let detail='已等待 '+Math.max(p.elapsed_seconds,Math.floor((Date.now()-started)/1000))+' 秒';
