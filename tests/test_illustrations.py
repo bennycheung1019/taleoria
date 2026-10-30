@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 from kobold_rpg.campaign import new_campaign
 from kobold_rpg.engine import Engine, RuleError
-from kobold_rpg.illustrations import IllustrationService, endpoint_url, image_bytes, translate_prompt, visual_source
+from kobold_rpg.illustrations import IllustrationService, endpoint_url, image_bytes, translate_prompt, visual_source, focused_prompt
 from kobold_rpg.library import CampaignLibrary
 from server import make_handler
 from scripts.legacy_images import install, patched_server, FILES
@@ -95,6 +95,40 @@ class IllustrationTests(unittest.TestCase):
         with patch('kobold_rpg.illustrations.http_json', return_value={'images':[PNG]}) as call:
             self.service._render(self.calls[0])
         self.assertEqual((call.call_args.args[1]['width'], call.call_args.args[1]['height']), (1024,768))
+
+    def test_inspected_rock_uses_a_single_subject_closeup_instead_of_location_inventory(self):
+        source={'location':{'name':'礦坑','description':'峽谷、吊橋、礦車、帳篷。'},
+                'action':'我仔細看看岩石。','narration':'石面上有三道淺淺的凹痕。',
+                'characters':[{'name':'老麥','description':'礦工'}]}
+        plan={'subject':'the rough rock surface','framing':'close_up','details':'Three shallow grooves in the stone.','background':''}
+        with patch('kobold_rpg.model._complete',return_value=plan) as model:
+            prompt=translate_prompt(source,'http://model')
+        model.assert_called_once()
+        self.assertTrue(prompt.startswith('Close-up of the rough rock surface'))
+        self.assertIn('fills the frame',prompt)
+        self.assertNotIn('mine',prompt);self.assertNotIn('miner',prompt)
+        messages=model.call_args.args[0]
+        self.assertEqual(next(iter(json.loads(messages[1]['content']))),'action')
+        self.assertIn('not proof it happened',messages[0]['content'])
+        self.assertIn('reference context only',messages[0]['content'])
+        self.assertEqual(model.call_args.kwargs['response_schema']['properties']['framing']['enum'],['close_up','medium','wide'])
+
+    def test_focus_supports_conversation_and_landscape_without_forcing_closeup(self):
+        for framing,beginning in [('medium','Medium shot'),('wide','Wide establishing view')]:
+            prompt=focused_prompt({'subject':'the visible subject','framing':framing,'details':'Visible details.','background':'Dim light.'})
+            self.assertTrue(prompt.startswith(beginning));self.assertNotIn('tightly cropped',prompt)
+
+    def test_incomplete_or_unsupported_focus_plan_does_not_silently_become_a_wide_view(self):
+        for plan in ({'prompt':'A mine'}, {'subject':'rock','framing':'macro','details':'grooves','background':''},
+                     {'subject':'rock','framing':'close_up','details':'<think>hidden','background':''}):
+            with self.subTest(plan=plan),self.assertRaises(RuleError):focused_prompt(plan)
+
+    def test_custom_moment_prompt_keeps_its_selected_framing_without_a_wide_suffix(self):
+        self.engine.record_gm_reply('看岩石',{'narration':'你看見石面有三道凹痕。','changes':{}},'rock',0)
+        self.service.translate=lambda *args:self.fail('custom prompt must skip LLM')
+        self.complete(self.request(kind='moment',subject='1',prompt='Extreme close-up of a rough rock surface'))
+        self.assertTrue(self.calls[0]['prompt'].startswith('Extreme close-up'))
+        self.assertNotIn('wide view',self.calls[0]['prompt'])
 
     def test_unseen_character_is_not_eligible_for_portrait(self):
         with self.assertRaises(RuleError):
