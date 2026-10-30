@@ -82,3 +82,6 @@ html[data-page="create"] .sidebar{display:none}
 @media(prefers-reduced-motion:reduce){.active-task::before{animation:none}}
 
 .person-card .relationship-note{background:var(--soft);border-left:2px solid var(--line);border-radius:0 9px 9px 0;padding:12px 14px;margin:0}
+
+/* Setup and other pages use the full content width when the campaign sidebar is hidden. */
+.app-shell:has(>.sidebar[hidden]){grid-template-columns:minmax(0,1fr)}
