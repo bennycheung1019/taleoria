@@ -6,7 +6,11 @@ def obj(properties):
 def text():return {'type':'string'}
 def texts():return {'type':'array','items':text()}
 def rows(properties):return {'type':'array','items':obj(properties)}
-BILINGUAL_NAME={'type':'string','pattern':r"^[^（()）]+（[A-Za-z][A-Za-z0-9 '\-]{0,80}）$"}
+# Pattern schemas become GBNF over the serialized JSON, not a decoded string.
+# Allowing a quote/backslash/control here lets a generated name consume the
+# closing quote and subsequent fields as part of its Chinese-name prefix.
+NAME_PREFIX=r'[^"\\\x00-\x1f（()）]'
+BILINGUAL_NAME={'type':'string','pattern':'^'+NAME_PREFIX+r"{1,80}（[A-Za-z][A-Za-z0-9 '-]{0,80}）$"}
 
 
 WORLD_SCHEMA=obj({

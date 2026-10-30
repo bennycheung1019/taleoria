@@ -1,13 +1,28 @@
-import copy,io,json,unittest
+import copy,io,json,re,unittest
 from unittest.mock import patch
 from kobold_rpg.engine import RuleError
 from kobold_rpg.model import _complete,InvalidJSONError
 from kobold_rpg.worldgen import generate_world
-from kobold_rpg.world_schema import WORLD_SCHEMA,obj,text
+from kobold_rpg.world_schema import WORLD_SCHEMA,obj,text,BILINGUAL_NAME
 from test_library import fixture
 
 
 class WorldSchemaTests(unittest.TestCase):
+    def test_bilingual_pattern_cannot_consume_json_delimiters_or_later_fields(self):
+        pattern=BILINGUAL_NAME['pattern']
+        for name in ['雨港（Rain Port）',"阿晴（Ah Ching）","瑪莉（Mary-Jane O'Neil）"]:
+            self.assertIsNotNone(re.fullmatch(pattern,name))
+        for prefix in ['雨港", "description": "另一欄','雨港\\','雨港\n','雨港\x00']:
+            self.assertIsNone(re.fullmatch(pattern,prefix+'（Rain Port）'))
+
+    def test_requested_english_name_prefix_cannot_consume_the_rest_of_the_plan(self):
+        candidate=fixture();plan=copy.deepcopy(candidate['plan']);plan['player']['name']='班尼（Benny）'
+        with patch('kobold_rpg.worldgen._complete',return_value=plan) as complete,patch('kobold_rpg.worldgen.audit_narration',return_value=candidate['audit']):
+            generate_world({**candidate['preferences'],'player_name':'Benny'},'http://local')
+        pattern=complete.call_args.kwargs['response_schema']['properties']['player']['properties']['name']['pattern']
+        self.assertIsNotNone(re.fullmatch(pattern,'班尼（Benny）'))
+        self.assertIsNone(re.fullmatch(pattern,'班尼", "role": "旅人（Benny）'))
+
     def test_schema_is_sent_in_the_existing_request_without_an_extra_model_call(self):
         response=io.BytesIO(json.dumps({'choices':[{'message':{'content':'{"ok":true}'},'finish_reason':'stop'}]}).encode())
         schema=obj({'ok':{'type':'boolean'}})

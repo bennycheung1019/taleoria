@@ -10,7 +10,7 @@ from .rulebook import excerpts
 from .storytypes import defaults, difficulty, DIFFICULTIES
 from .names import has_english, chinese,PAIR
 from .progress import stage
-from .world_schema import WORLD_SCHEMA,obj,text
+from .world_schema import WORLD_SCHEMA,obj,text,NAME_PREFIX
 
 
 WORLD_SYSTEM = '''你是 RPG OS v1.01 的世界建立者。依玩家偏好，用繁體中文設計一個可自由探索的新戰役。
@@ -194,8 +194,9 @@ def generate_plan(raw, model_url):
         pair=PAIR.fullmatch(requested)
         if pair:schema['properties']['player']['properties']['name']={'type':'string','enum':[requested]}
         else:
-            pattern=(r'^.{1,40}（'+re.escape(requested)+r'）$' if re.fullmatch(r"[A-Za-z][A-Za-z '\-]*",requested)
-                     else '^'+re.escape(requested)+r"（[A-Za-z][A-Za-z '\-]{0,80}）$")
+            literal=re.escape(requested).replace(r'\-','-')
+            pattern=('^'+NAME_PREFIX+r'{1,40}（'+literal+r'）$' if re.fullmatch(r"[A-Za-z][A-Za-z '\-]*",requested)
+                     else '^'+literal+r"（[A-Za-z][A-Za-z '-]{0,80}）$")
             schema['properties']['player']['properties']['name']={'type':'string','pattern':pattern}
     with stage('建立世界與人物'):
       try:
