@@ -186,9 +186,22 @@ def opening_action():
     return normalize_action({'kind': 'freeform', 'text': '【新世界開場】呈現已建立的起點，保留玩家下一個決定。'})
 
 
-def generate_plan(raw, model_url):
+def generate_plan(raw, model_url, compact=False):
     prefs = preferences(raw)
     schema=copy.deepcopy(WORLD_SCHEMA)
+    if compact:
+        def bound(node):
+            if node.get('type')=='string':node.update(minLength=1,maxLength=120)
+            for child in node.get('properties',{}).values():bound(child)
+            if isinstance(node.get('items'),dict):bound(node['items'])
+        bound(schema)
+        schema['properties']['title']['maxLength']=60
+        schema['properties']['background']['maxLength']=240
+        schema['properties']['opening']['maxLength']=240
+        schema['properties']['location']['properties']['nearby']['maxItems']=1
+    instruction=WORLD_SYSTEM
+    if compact:
+        instruction+='\n這是快速開局。世界背景與開場各約八十字，其他欄位各用一個短句（約十五至三十字），只建立起點與最多一個附近地點。普通人物不必有秘密或任務。不預寫後續場景、對白與遠處人物。保留玩家明確要求；細節可在實際接觸時再建立。'
     requested=prefs['player_name']
     if requested:
         pair=PAIR.fullmatch(requested)
@@ -200,8 +213,8 @@ def generate_plan(raw, model_url):
             schema['properties']['player']['properties']['name']={'type':'string','pattern':pattern}
     with stage('建立世界與人物'):
       try:
-        plan = normalize_plan(_complete([{'role': 'system', 'content': '已核對的 RPG OS v1.01 原規則摘錄：\n' + excerpts('observe')+'\n\n'+WORLD_SYSTEM},
-                      {'role': 'user', 'content': json.dumps(prefs, ensure_ascii=False)}], model_url, 4096, 0.65, timeout=600,response_schema=schema))
+        plan = normalize_plan(_complete([{'role': 'system', 'content': '已核對的 RPG OS v1.01 原規則摘錄：\n' + excerpts('observe')+'\n\n'+instruction},
+                      {'role': 'user', 'content': json.dumps(prefs, ensure_ascii=False)}], model_url, 2400 if compact else 4096, 0.65, timeout=600,response_schema=schema))
       except InvalidJSONError as exc:
         raise RuleError('新世界草案未能完整產生，尚未建立或切換世界。你的設定與目前故事仍保留，請稍後再試。') from exc
     if not isinstance(plan,dict) or not all(isinstance(plan.get(key),dict) for key in ('player','npc','location')) or not all(isinstance(plan[key].get('name'),str) for key in ('player','npc','location')):

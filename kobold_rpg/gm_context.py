@@ -45,3 +45,30 @@ def recent_context(engine,state,limit=4,scan=32):
     return list(reversed(recent)),{
         'snapshot_revision':state['revision'],'field_history':fields,
         'scope':'版本只標示欄位何時實際改變，不代表舊值自動失效。初始場景與早期評價可能尚未隨後續事件整理；由主持人依已接受的事件處理矛盾。'}
+
+
+def recalled_context(engine,state,text,exclude=()):
+    """Retrieve older exact exchanges for named known people, without an LLM."""
+    from .names import aliases,chinese
+    from .references import mentions
+    registry=aliases(state)
+    ids=[key for key,npc in state['npcs'].items() if npc.get('known') and mentions(npc,text,registry)][:6]
+    if not ids:return []
+    placeholders=','.join('?' for _ in ids)
+    clauses=[f"EXISTS(SELECT 1 FROM json_each(journal.body,'$.gm_references') WHERE value IN ({placeholders}))",
+             f"EXISTS(SELECT 1 FROM json_each(journal.body,'$.gm_changes.npcs') WHERE key IN ({placeholders}))"]
+    params=[*ids,*ids]
+    for key in ids:
+        name=chinese(state['npcs'][key]['name'])
+        clauses.append("instr(json_extract(body,'$.narration'),?)>0");params.append(name)
+    with engine.connect() as db:
+        rows=db.execute("SELECT revision,body FROM journal WHERE json_extract(body,'$.status')='approved' AND ("+' OR '.join(clauses)+") ORDER BY revision DESC LIMIT 12",params).fetchall()
+    ignored=set(exclude);result=[]
+    for row in rows:
+        if row['revision'] in ignored:continue
+        body=json.loads(row['body']);narration=body['narration']
+        result.append({'revision':row['revision'],'declaration':body['action']['text'][:240],
+            'narration':narration[:800],'excerpted':len(narration)>800,'referenced_people':ids,
+            'scope':'已發生的原文回取，不代表所有在場者都聽到。沿用當時可感知資訊，不重新執行。'})
+        if len(result)==2:break
+    return list(reversed(result))

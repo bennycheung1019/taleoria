@@ -89,6 +89,13 @@ def validate_state(state):
     if 'story' in state:
         from .story_director import validate as validate_story
         validate_story(state['story'],state,RuleError)
+    if 'scene_memory' in state:
+        memory=state['scene_memory']
+        if not isinstance(memory,dict) or memory.get('version')!=1 or not isinstance(memory.get('focus'),dict) or not isinstance(memory.get('contacts'),dict):
+            raise RuleError('場景記憶索引格式不正確。')
+        for place,keys in memory['focus'].items():
+            if place not in places or not isinstance(keys,list) or any(not isinstance(key,str) or key not in state['npcs'] for key in keys):raise RuleError('場景人物索引不正確。')
+        if any(key not in state['npcs'] or type(value) is not int or not 0<=value<=state['revision'] for key,value in memory['contacts'].items()):raise RuleError('人物接觸紀錄不正確。')
     for npc in state['npcs'].values():
         if 'player_view' in npc:validate_player_card(npc['player_view'],state['revision'],RuleError)
     notes=state.get('people_notes',{})

@@ -30,12 +30,69 @@ def context(state):
             for key in involved if key in state['npcs']}
     established=[{key:copy.deepcopy(offer[key]) for key in ('id','place','carrier','clue')}
         for row in plan['chapters'] for offer in row['opportunities'] if seen.get(offer['id'])=='presented'][-3:]
-    return {'authority':'Planning only. RPG OS v1.01 and actual current reality take priority.',
+    result={'authority':'Planning only. RPG OS v1.01 and actual current reality take priority.',
         'central_conflict':plan['central_conflict'],'ending_conflict':plan['ending_conflict'],
         'fixed_truths':copy.deepcopy(plan['truths']),
         'chapter':{key:copy.deepcopy(chapter[key]) for key in ('id','title','focus','reveals','outcomes')},
         'chapters':[{'id':row['id'],'title':row['title']} for row in plan['chapters']],
         'opportunities':available[:2],'established_threads':established,'actor_reality':actors,'progress':copy.deepcopy(progress)}
+    if story.get('generation')=='progressive':
+        result['generation']='progressive'
+        result['chapter']['detail_status']=chapter.get('detail_status','outline')
+        result['chapters']=[{key:row[key] for key in ('id','title','focus')} for row in plan['chapters']]
+        result['expansion']={'mode':'on_contact_in_the_same_reply',
+            'pending':[row['id'] for row in plan['chapters'] if row.get('detail_status')=='outline'],
+            'constraint':'當前章首次使用可先私下準備一小段，不代表玩家已接受、發現或推進；日常閒聊不推進章節。後續細節隨實際探索追加。story_expand 不能重寫真相、地理、人物與後果；新資料先建立後依賴。拒絕線索不可換皮重送。'}
+    return result
+
+
+def apply_expansion(state,after,expansion,narration,revision):
+    """Append the contacted chapter's details atomically; never replace canon."""
+    if not state.get('story') or not isinstance(expansion,dict):return False
+    if set(expansion)-{'chapter','actors','outcomes','opportunities','evidence','planning_truth'}:return False
+    evidence=expansion.get('evidence','')
+    story=copy.deepcopy(state['story']);plan=story['blueprint']
+    chapter=next((row for row in plan['chapters'] if row['id']==expansion.get('chapter')),None)
+    if chapter is None:return False
+    proof=next((row for row in plan['truths'] if row['id']==expansion.get('planning_truth')),None)
+    private_plan=(story.get('generation')=='progressive' and chapter.get('detail_status')=='outline'
+        and proof is not None and evidence in (proof['id'],proof['text']))
+    if not private_plan and (not isinstance(evidence,str) or len(normalize(evidence))<4 or normalize(evidence) not in normalize(narration)):return False
+    # These are references to already persisted records (including records
+    # established earlier in this same reply), not permission to teleport them.
+    actors=expansion.get('actors',[]);outcomes=expansion.get('outcomes',[]);offers=expansion.get('opportunities',[])
+    if not all(isinstance(items,list) for items in (actors,outcomes,offers)):return False
+    if len(actors)>4 or len(outcomes)>4 or len(offers)>3:return False
+    if any(not isinstance(key,str) or key not in after['npcs'] for key in actors):return False
+    if any(not isinstance(value,str) or not 1<=len(value)<=240 for value in outcomes):return False
+    ids={item['id'] for row in plan['chapters'] for item in row['opportunities']}
+    added=[]
+    for offer in offers:
+        if not isinstance(offer,dict) or set(offer)!={'id','place','carrier','clue','basis'}:return False
+        if any(not isinstance(value,str) or not 1<=len(value)<=500 for value in offer.values()):return False
+        if offer['id'] in ids:
+            if private_plan and any(offer==old for old in chapter['opportunities']):continue
+            return False
+        if offer['place'] not in after['locations']:return False
+        carrier=offer['carrier']
+        if carrier!='environment':
+            npc=after['npcs'].get(carrier)
+            if not npc or not npc.get('alive') or npc['location']!=offer['place']:return False
+            # A newly established lead cannot resurrect an old rejected/lost
+            # clue under a different ID. Exact persisted wording is comparable.
+        if any(normalize(old['clue'])==normalize(offer['clue']) for row in plan['chapters'] for old in row['opportunities']):return False
+        ids.add(offer['id']);added.append(copy.deepcopy(offer))
+    if len(chapter['opportunities'])+len(added)>12:return False
+    if not actors and not outcomes and not added:return False
+    chapter['actors']=list(dict.fromkeys([*chapter['actors'],*actors]))
+    chapter['outcomes']=list(dict.fromkeys([*chapter['outcomes'],*outcomes]))[:8]
+    chapter['opportunities'].extend(added)
+    chapter['detail_status']='developing';chapter['expanded_revision']=revision
+    from .engine import RuleError
+    try:validate(story,after,RuleError)
+    except (RuleError,TypeError,KeyError):return False
+    after['story']=story
+    return True
 
 
 def apply_update(state, after, update, narration, revision):
@@ -43,7 +100,7 @@ def apply_update(state, after, update, narration, revision):
     if not state.get('story') or not isinstance(update,dict):return
     evidence=update.get('evidence','')
     if not isinstance(evidence,str) or len(normalize(evidence))<4 or normalize(evidence) not in normalize(narration):return
-    story=copy.deepcopy(state['story']);plan=story['blueprint'];progress=story['progress']
+    story=copy.deepcopy(after.get('story',state['story']));plan=story['blueprint'];progress=story['progress']
     chapters={row['id'] for row in plan['chapters']}
     truths={row['id'] for row in plan['truths']}
     offers={offer['id'] for row in plan['chapters'] for offer in row['opportunities']}
@@ -82,6 +139,7 @@ def validate(story,state,error):
     for chapter in plan['chapters']:
         if not isinstance(chapter,dict) or not isinstance(chapter.get('id'),str) or chapter['id'] in chapters:raise error('故事章節識別不完整。')
         chapters.add(chapter['id'])
+        if chapter.get('detail_status','ready') not in ('outline','developing','ready'):raise error('章節展開狀態不正確。')
         if not all(isinstance(chapter.get(key),str) for key in ('title','focus')) or not all(isinstance(chapter.get(key),list) for key in ('reveals','actors','outcomes','opportunities')):raise error('故事章節缺少方向或途徑。')
         if set(chapter['reveals'])-truths or set(chapter['actors'])-set(state['npcs']):raise error('章節引用未建立的人物或真相。')
         if any(not isinstance(value,str) for value in chapter['outcomes']):raise error('章節可能結果格式不正確。')

@@ -6,11 +6,13 @@ import urllib.request
 
 def budget(base_url,maximum):
     if urllib.parse.urlparse(base_url).hostname not in ('localhost','127.0.0.1','::1'):return None
-    try:
-        with urllib.request.urlopen(base_url.rstrip('/')+'/props',timeout=2) as response:props=json.load(response)
-        size=props.get('n_ctx')
-        return size-maximum-128 if type(size) is int and size>maximum+256 else None
-    except Exception:return None
+    for path,key in (('/api/v1/config/max_context_length','value'),('/props','n_ctx')):
+        try:
+            with urllib.request.urlopen(base_url.rstrip('/')+path,timeout=2) as response:data=json.load(response)
+            size=data.get(key)
+            if type(size) is int and size>maximum+256:return size-maximum-128
+        except Exception:pass
+    return None
 
 
 def count(base_url,messages):

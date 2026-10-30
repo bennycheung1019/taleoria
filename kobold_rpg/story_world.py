@@ -128,7 +128,7 @@ def build_story(candidate,raw):
     return candidate
 
 
-def generate_world(raw,model_url):
+def generate_full_world(raw,model_url):
     candidate=generate_plan(raw,model_url)
     sources=verified_sources()
     rules=section(sources['OS_LAW.md'],'## Establish',1800)+'\n\n'+sources['ENGINE_freeform.md']
@@ -155,3 +155,62 @@ def generate_world(raw,model_url):
             holders[key]['name']=missing[key]+'（'+value+'）'
     with stage('建立固定人物、地點與故事進度'):
         return build_story(candidate,outline)
+
+
+SKETCH_SCHEMA=obj({'central_conflict':bounded(140),'ending_conflict':bounded(140),
+    'truths':array(obj({'id':{'type':'string','enum':['truth_1','truth_2','truth_3']},'text':bounded(140)}),3,3),
+    'chapters':array(obj({'id':{'type':'string','enum':['chapter_1','chapter_2','chapter_3']},
+        'title':bounded(40),'focus':bounded(100),'reveals':array({'type':'string','enum':['truth_1','truth_2','truth_3']},1,2)}),3,3),
+    'opening_lead':obj({'clue':bounded(100),'basis':bounded(100)})})
+
+SKETCH_SYSTEM='''你是 RPG OS v1.01 的故事設計者。只定開局前的短骨架，不寫完整章節。
+先固定三項具體真相（truth_1、truth_2、truth_3，各一短句）。真相中的人物與地點若已命名或定位，之後不能為迎合路線而搬動或改寫。不得新增主角能力或血統。
+三章依次 chapter_1、chapter_2、chapter_3，各用一句描述可能調查的方向。結局是開放衝突，不預定玩家行動、勝敗、感情或必經路線；允許停留、拒絕、繞路及提早解決。
+opening_lead 是起點環境可合理觀察、指向固定衝突的一個微小線索與其原因。不是強迫任務，不新增遠處人物到場，不改主角或在場人物的既定背景。
+每欄約十五至三十字。不寫新人物完整資料、遠處地點細節、各章機會清單或未發生的對白。其他內容留待實際接觸時建立。只回傳指定 JSON。'''
+
+
+def build_sketch(candidate,outline):
+    required=set(SKETCH_SCHEMA['properties'])
+    if not isinstance(outline,dict) or set(outline)!=required:raise RuleError('故事骨架尚未完整，開局資料已保留，可重試。')
+    result=copy.deepcopy(candidate);state=result['seed']
+    for key in ('central_conflict','ending_conflict'):_text(outline[key],'故事核心',500)
+    if not isinstance(outline['chapters'],list) or [c.get('id') for c in outline['chapters'] if isinstance(c,dict)]!=['chapter_1','chapter_2','chapter_3']:
+        raise RuleError('故事章節識別不完整，開局資料已保留，可重試。')
+    if not isinstance(outline['truths'],list) or len(outline['truths'])!=3:raise RuleError('故事固定真相不完整。')
+    chapters=[]
+    for row in outline['chapters']:
+        if set(row)!={'id','title','focus','reveals'}:raise RuleError('故事骨架章節格式不正確。')
+        for key in ('title','focus'):_text(row[key],'章節方向',500)
+        chapters.append({**copy.deepcopy(row),'actors':[],'outcomes':[],'opportunities':[],'detail_status':'outline'})
+    lead=outline['opening_lead']
+    if not isinstance(lead,dict) or set(lead)!={'clue','basis'}:raise RuleError('開局線索格式不正確。')
+    for value in lead.values():_text(value,'開局線索',500)
+    chapters[0]['opportunities']=[{'id':'opening_lead','place':state['pc']['location'],'carrier':'environment',**lead}]
+    state['story']={'version':1,'generation':'progressive','authority':'RPG OS v1.01',
+        'blueprint':{'central_conflict':outline['central_conflict'],'ending_conflict':outline['ending_conflict'],
+                     'truths':copy.deepcopy(outline['truths']),'chapters':chapters},
+        'progress':{'chapter':'chapter_1','status':'active','revealed':[],'opportunities':{},'last_offer_revision':-4,'recent':[]}}
+    validate(state['story'],state,RuleError)
+    result.update(source_mode='rpg_os_progressive',audit=None)
+    return result
+
+
+def generate_world(raw,model_url,cache_dir=None):
+    from .worldgen import preferences
+    from .world_cache import DraftCheckpoint
+    prefs=preferences(raw);checkpoint=DraftCheckpoint(cache_dir,prefs,model_url)
+    candidate=checkpoint.load()
+    if candidate is None:
+        candidate=generate_plan(raw,model_url,compact=True)
+        checkpoint.save(candidate)
+    planning={'preferences':candidate['preferences'],'world':candidate['plan']['background'],
+        'rules':candidate['plan']['rules'],'player':candidate['plan']['player'],
+        'start':candidate['plan']['location'],'present_person':candidate['plan']['npc']}
+    with stage('準備故事骨架'):
+        outline=_complete([{'role':'system','content':SKETCH_SYSTEM},
+            {'role':'user','content':json.dumps(planning,ensure_ascii=False,separators=(',',':'))}],
+            model_url,1200,.45,timeout=600,response_schema=SKETCH_SCHEMA)
+    result=build_sketch(candidate,outline)
+    checkpoint.complete()
+    return result

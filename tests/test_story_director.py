@@ -142,11 +142,18 @@ class StoryDirectorTests(unittest.TestCase):
         self.assertEqual(len(library.engine.history()),1)
         self.assertIn('story',library.engine.state())
 
-    def test_creation_adds_one_outline_call_only_and_no_gameplay_audit(self):
-        base,outline=story_fixture()
-        with patch('kobold_rpg.story_world.generate_plan',return_value=base),patch('kobold_rpg.story_world._complete',return_value=outline) as model:
+    def test_creation_adds_only_a_short_skeleton_call_and_no_remote_cast(self):
+        base,old=story_fixture()
+        outline={key:old[key] for key in ('central_conflict','ending_conflict','truths')}
+        outline['chapters']=[{key:row[key] for key in ('id','title','focus','reveals')} for row in old['chapters']]
+        outline['opening_lead']={'clue':'河務公告有一處墨跡被刮去。','basis':'店外牆上原有河務公告。'}
+        with patch('kobold_rpg.story_world.generate_plan',return_value=base) as plan,patch('kobold_rpg.story_world._complete',return_value=outline) as model:
             result=generate_world(base['preferences'],'http://model')
-        model.assert_called_once();self.assertEqual(result['source_mode'],'rpg_os_director')
+        model.assert_called_once();self.assertEqual(result['source_mode'],'rpg_os_progressive')
+        self.assertTrue(plan.call_args.kwargs['compact'])
+        self.assertEqual(model.call_args.args[2],1200)
+        self.assertEqual(set(result['seed']['npcs']),set(base['seed']['npcs']))
+        self.assertEqual(set(result['seed']['locations']),set(base['seed']['locations']))
         self.assertIsNone(result['audit'])
 
     def test_token_budget_preserves_os_and_latest_exchange_with_matching_history_index(self):

@@ -353,6 +353,7 @@ class Engine:
                 'source':'rpg_os_gm','action':{'kind':'freeform','text':original,'target':'','ability':'','item':'','destination':''},
                 'reason':'RPG OS v1.01 主持裁定；程式保存紀錄。','narration':narration,'events':[],
                 'bookkeeping':bookkeeping,'gm_changes':reply.get('changes',{}),
+                'gm_references':[key for key,when in after.get('scene_memory',{}).get('contacts',{}).items() if when==revision+1],
                 'ability_source_check':reply.get('ability_source_check',[]),
                 'ability_source_correction':reply.get('ability_source_correction',False)})
 
@@ -376,6 +377,7 @@ class Engine:
                 place['description']='你曾抵達的地方，最新情況需要回去確認。' if key in visited else '已知通路上的地方，抵達後再了解。'
         state.pop('people_notes',None)
         state.pop('story',None)  # Future chapters and fixed secrets are GM-only.
+        state.pop('scene_memory',None)  # Retrieval indices are host bookkeeping.
         state['pc'].pop('injuries',None)
         for npc in state["npcs"].values():
             npc.pop("anchor", None)

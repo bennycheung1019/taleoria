@@ -170,7 +170,7 @@ class CampaignLibrary:
             path = self.root / 'campaigns' / (preview_id + '.sqlite3')
             engine = Engine(path, seed=candidate['seed'])
             if engine.state()['revision'] == 0:
-                if candidate.get('source_mode')=='rpg_os_director':
+                if candidate.get('source_mode') in {'rpg_os_director','rpg_os_progressive'}:
                     engine.record_gm_reply('【新世界開場】',{'narration':candidate['plan']['opening'],'changes':{}},'world-opening-'+preview_id,0)
                 else:
                     proposal = engine.propose(opening_action(), opening_proposal(candidate['plan']), 0,

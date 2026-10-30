@@ -28,7 +28,7 @@ from kobold_rpg.understanding import semantic_understanding,perceived_text
 from kobold_rpg.settings import load_settings, validate_settings
 from kobold_rpg.planning import semantic_action
 from kobold_rpg.gm import reply as rpg_os_reply
-from kobold_rpg.gm_context import recent_context
+from kobold_rpg.gm_context import recent_context,recalled_context
 
 ROOT = Path(__file__).resolve().parent
 
@@ -108,7 +108,7 @@ def make_handler(engine, model_url, token, library=None, enricher=None, planner=
                     request=body.get('request_id',secrets.token_urlsafe(18) if path=='/api/world/draft' else None)
                     if not isinstance(request,str) or not 1<=len(request)<=120:
                         raise RuleError('需要有效的行動識別。')
-                    job=progress.start(body.get('session_id',''),request,3 if path=='/api/world/draft' else 1 if gm is not None else 3 if planner is not None else 2)
+                    job=progress.start(body.get('session_id',''),request,2 if path=='/api/world/draft' else 1 if gm is not None else 3 if planner is not None else 2)
                     context_token=active.set(job)
                 if path == '/api/connection/settings':
                     from kobold_rpg.illustrations import endpoint_url
@@ -118,7 +118,7 @@ def make_handler(engine, model_url, token, library=None, enricher=None, planner=
                     Handler.illustrations.model_url=value
                     result={'model_url':value}
                 elif path == '/api/world/draft' and library is not None:
-                    candidate=generate_world(body.get('preferences'), model_url)
+                    candidate=generate_world(body.get('preferences'), model_url, library.root/'drafts')
                     result=display(library.preview(candidate),aliases(candidate['seed']))
                 elif path == '/api/world/create' and library is not None:
                     result = library.create(body['preview_id'])
@@ -143,6 +143,8 @@ def make_handler(engine, model_url, token, library=None, enricher=None, planner=
                             state=engine.state()
                             if state.get('setup_required'):raise RuleError('先建立你的世界，再開始冒險。')
                             recent,provenance=recent_context(engine,state)
+                            recalled=recalled_context(engine,state,body.get('text') or '',[row['revision'] for row in recent])
+                            if recalled:provenance['recalled_exchanges']=recalled
                             response=gm(state,body.get('text'),model_url,recent=recent,state_provenance=provenance)
                             result=engine.record_gm_reply(body.get('text'),response,body['request_id'],state['revision'])
                         result={**display(result,aliases(engine.state())),'turn':turn(engine,result['revision']),
