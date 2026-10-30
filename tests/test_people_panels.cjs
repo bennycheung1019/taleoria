@@ -1,0 +1,42 @@
+const assert=require('node:assert/strict');
+const fs=require('node:fs');
+const vm=require('node:vm');
+const source=fs.readFileSync('app.js','utf8');
+const renderChanged=source.match(/function renderChangedPanels\(\)[\s\S]*?(?=\nfunction applyFrame)/)[0];
+const counts={profile:0,background:0,map:0,people:0,bag:0};
+const state={session_id:'one',pc:{location:'gate',conditions:[],inventory:{},resources:{}},abilities:{},item_catalog:{},locations:{gate:{name:'北門'}},world:{},contract:{},atlas:{nodes:[{id:'gate',current:true}]},people:{hark:{name:'哈克',last_seen_revision:0,relationship:'尚未明朗'}}};
+const context=vm.createContext({state,history:[],panelSignatures:{},Object,JSON,
+  renderProfile:()=>counts.profile++,renderWorldSheet:()=>counts.background++,renderWorld:()=>counts.map++,renderPeople:()=>counts.people++,renderBag:()=>counts.bag++});
+vm.runInContext(renderChanged+';renderChangedPanels();',context);
+assert.deepEqual(counts,{profile:1,background:1,map:1,people:1,bag:1});
+state.people.hark.last_seen_revision=1;
+vm.runInContext('renderChangedPanels();',context);
+assert.equal(counts.people,1,'unchanged public information must not redraw merely because another turn passed');
+state.people.hark.relationship='他開始信任你。';
+vm.runInContext('renderChangedPanels();',context);
+assert.equal(counts.people,2);assert.equal(counts.profile,1);assert.equal(counts.map,1);
+state.pc.conditions=['衣物濕透'];state.atlas.nodes[0].description='北門外下起雨。';
+vm.runInContext('renderChangedPanels();',context);
+assert.equal(counts.profile,2);assert.equal(counts.map,2);assert.equal(counts.people,2);
+const applyFrame=source.match(/function applyFrame\(f\)[\s\S]*?(?=\nfunction renderPanels)/)[0];
+context.$=()=>({textContent:''});context.selectedMapId='gate';
+vm.runInContext(applyFrame+';applyFrame({campaign_id:"campaign",revision:2,session_id:"one",contract:{},pc:{id:"ben",name:"班",location:"pier"},scene:{name:"渡口"}});',context);
+assert.equal(context.selectedMapId,'pier','map details should follow a move when the old current place was selected');
+context.selectedMapId='gate';
+vm.runInContext('applyFrame({campaign_id:"campaign",revision:3,session_id:"one",contract:{},pc:{id:"ben",name:"班",location:"shelter"},scene:{name:"避雨棚"}});',context);
+assert.equal(context.selectedMapId,'gate','keep a different location the player deliberately selected');
+
+class Node{constructor(tag,cls='',text=''){this.tag=tag;this.className=cls;this.textContent=text;this.children=[];this.dataset={};}append(n){this.children.push(n);}replaceChildren(){this.children=[];}}
+const controls={peopleList:new Node('div'),peopleCount:new Node('span')};
+const el=(...args)=>new Node(...args);
+const add=(parent,...args)=>{const child=el(...args);parent.append(child);return child;};
+const peopleContext=vm.createContext({state:{people:{hark:{id:'hark',name:'哈克（Hark）',last_seen:'北門',description:'初次相遇時正在守門。',facts:[{kind:'said',quote:'原文片段',summary:'他說自己有弟弟。'}],relationship:'他對你的幫忙心存感謝。',interactions:[{text:'不應再出現在人物頁的整段故事'}]}}},$:(id)=>controls[id],el,add,Object});
+const renderPeople=source.match(/function renderPeople\(\)[\s\S]*?(?=\nfunction renderBag)/)[0];
+vm.runInContext(renderPeople+';renderPeople();',peopleContext);
+const textOf=node=>node.textContent+node.children.map(textOf).join('\n');
+const text=textOf(controls.peopleList);
+assert.ok(text.includes('初次印象'));assert.ok(text.includes('你已知道的事'));assert.ok(text.includes('你們的關係'));
+assert.ok(text.includes('他說自己有弟弟。'));assert.ok(text.includes('心存感謝'));
+assert.ok(!text.includes('我們的交談與經歷'));assert.ok(!text.includes('不應再出現'));assert.ok(!text.includes('原文片段'));
+assert.equal(controls.peopleList.children[0].children[0].children[0].dataset.mediaKind,'portrait');
+console.log('People cards and conditional panel refresh checks passed');

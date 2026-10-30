@@ -1,0 +1,24 @@
+{
+  "project": "RPG OS v1.01",
+  "author": "croatianrdy2defend-create",
+  "url": "https://github.com/croatianrdy2defend-create/RPG-OS",
+  "license": "CC BY 4.0",
+  "files": {
+    "OS_LAW.md": {
+      "source": "OS/LAW.md",
+      "sha256": "a8c480a7b970ae5c57a8426d276c27cd8ad7ffd8fb7c24ad39c9e323a660dc4c"
+    },
+    "OS_AGENT_STATE.md": {
+      "source": "OS/AGENT_STATE.md",
+      "sha256": "96e662d5e09472e07f6f57ebbd550ac4a431f4739cf10b6f2a54b67c07024e56"
+    },
+    "ENGINE_freeform.md": {
+      "source": "ENGINE/freeform.md",
+      "sha256": "67b27b95ef2ad0bde9883333db5105d795ab12a823399bb50e1949cef75cef16"
+    },
+    "LICENSE": {
+      "source": "LICENSE",
+      "sha256": "d557539df68e771cc1eedcc91d13f70fca930e508d11eedcafa4b15db49e3744"
+    }
+  }
+}

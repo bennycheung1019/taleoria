@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 72" fill="none">
+  <title>Taleoria｜千語之境</title>
+  <path d="M3 68V32C3 15.98 15.98 3 32 3s29 12.98 29 29v36H3Z" fill="#183C32"/>
+  <path d="M6.5 64.5V32C6.5 17.92 17.92 6.5 32 6.5S57.5 17.92 57.5 32v32.5h-51Z" stroke="#CCB782"/>
+  <path d="M31.95 54.5C26.45 48.7 18.8 46.8 11.5 48.2V29.5c8.1-1.2 15.1 2.2 20.45 8.25V54.5Z" fill="#A8B995"/>
+  <path d="M32.05 54.5C37.55 48.7 45.2 46.8 52.5 48.2V29.5c-8.1-1.2-15.1 2.2-20.45 8.25V54.5Z" fill="#D8DFC6"/>
+  <path d="M16.5 36c4.2.2 7.4 1.7 10.2 4.1M16.5 41.8c4.2.2 7.4 1.7 10.2 4.1M47.5 36c-4.2.2-7.4 1.7-10.2 4.1M47.5 41.8c-4.2.2-7.4 1.7-10.2 4.1" stroke="#183C32" stroke-width="1.2" stroke-linecap="round" opacity=".55"/>
+  <path d="M32 37.5v18.75M13.5 53c7.8-.6 13.5 1.45 18.5 6.25C37 54.45 42.7 52.4 50.5 53" stroke="#CCB782" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="m32 13 2.3 7.2 7.2 2.3-7.2 2.3L32 32l-2.3-7.2-7.2-2.3 7.2-2.3L32 13Z" fill="#DDC58D"/>
+  <circle cx="44.5" cy="18" r="1.1" fill="#DDC58D"/>
+</svg>

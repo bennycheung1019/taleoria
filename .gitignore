@@ -1,0 +1,24 @@
+# Player data and machine-specific settings must stay private.
+/data/*
+!/data/.gitkeep
+/models/*
+!/models/README.md
+/taleoria.local.json
+/LOCAL_MIGRATION.md
+/dist/
+/work/
+/archive/
+/image-update-backups/
+__pycache__/
+*.py[cod]
+.DS_Store
+.venv/
+*.gguf
+*.safetensors
+*.ckpt
+*.rpgsave
+*.sqlite3*
+*.log
+/web-dist/
+/.vercel/
+/.env*

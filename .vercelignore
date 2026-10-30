@@ -1,0 +1,14 @@
+*
+!ui.html
+!app.js
+!connection.js
+!styles.css
+!illustrations.js
+!illustrations.css
+!favicon.svg
+!taleoria-mark.svg
+!web-defaults.json
+!vercel.json
+!scripts/
+scripts/*
+!scripts/build_web.py

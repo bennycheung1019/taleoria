@@ -1,0 +1,15 @@
+const assert=require('node:assert/strict');
+const fs=require('node:fs');
+const vm=require('node:vm');
+const source=fs.readFileSync('app.js','utf8');
+const setBusy=source.match(/^function setBusy\(value\).*$/m)[0];
+const controls={actionInput:{},sendAction:{},syncHint:{}};
+const mutations=[{},{}];
+const context=vm.createContext({busy:false,syncing:true,state:{pc:{alive:false}},$:(id)=>controls[id],document:{querySelectorAll:()=>mutations,body:{setAttribute(){}}}});
+vm.runInContext(setBusy+';setBusy(false);',context);
+assert.equal(controls.actionInput.disabled,false,'OOC and ordinary input remain available with a dead PC');
+assert.equal(controls.sendAction.disabled,false,'unfinished metadata must not block sending');
+assert.ok(mutations.every(item=>!item.disabled));
+vm.runInContext('setBusy(true);',context);
+assert.equal(controls.sendAction.disabled,true,'an in-flight send is still protected against accidental duplicates');
+console.log('GM composer checks passed');

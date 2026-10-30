@@ -1,0 +1,25 @@
+{
+  "note": "這些是主持人操作格式示例，不是已接受的戰役設定。不要自動執行。每一步各有具體已接受來源，必須先行建立再於後續回合使用。",
+  "register_condition": {"kind": "flag", "id": "training_complete", "value": false},
+  "record_accepted_condition_change": {"kind": "flag", "id": "training_complete", "value": true},
+  "register_learned_power": {
+    "kind": "power", "id": "small_light", "actor": "ben", "name": "微光術",
+    "effect": "掌心產生微弱可見光，只能照明，沒有熱力、傷害、療效或其他能力。",
+    "requires_flags": ["training_complete"], "result_form": null
+  },
+  "register_prospective_form": {
+    "kind": "form", "actor": "ben", "id": "wolf_form",
+    "description": "只有後續明確接受的變形術可取得的狼形，並非一直存在的隱藏血脈。"
+  },
+  "new_person": {
+    "kind": "npc",
+    "npc": {
+      "id": "new_person", "name": "新人物（New Person）", "location": "river_street",
+      "known": true, "alive": true, "description": "請填具體成年人物的可見外貌與活動。",
+      "anchor": {"values": "具體牽掛", "concern": "當下實際顧慮", "boundary": "個人界線", "levers": "能打動此人的具體條件"},
+      "encounter": {"condition": "身心狀況與活動", "priorities": "優先事項及限制", "appraisal": "察覺與評價或精確資訊限制", "attraction": "適用吸引或明確來源限制", "stance": "參與態度"},
+      "knowledge": [], "conditions": []
+    },
+    "identity": {"kind": "identity", "actor": "new_person", "species": "人類", "role": "明確成年角色身分", "forms": {"human": "普通人類外形"}, "current_form": "human"}
+  }
+}
