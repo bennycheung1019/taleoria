@@ -139,7 +139,7 @@ def generate_world(raw,model_url):
         'places':seed['locations'],'guide':candidate['plan']['npc']}
     with stage('預寫故事核心與章節'):
         outline=_complete([{'role':'system','content':'RPG OS v1.01 原文依據：\n'+rules+'\n\n'+SYSTEM},
-            {'role':'user','content':json.dumps(planning,ensure_ascii=False)}],model_url,3600,.55,timeout=300,response_schema=story_schema(seed))
+            {'role':'user','content':json.dumps(planning,ensure_ascii=False)}],model_url,4096,.55,timeout=600,response_schema=story_schema(seed))
     # Compatibility with adapters that ignore a name pattern: repair names only,
     # never regenerate fictional facts or the player's decisions.
     holders={row.get('id'):row for field in ('sites','cast') for row in outline.get(field,[]) if isinstance(row,dict)} if isinstance(outline,dict) else {}

@@ -200,7 +200,7 @@ def generate_plan(raw, model_url):
     with stage('建立世界與人物'):
       try:
         plan = normalize_plan(_complete([{'role': 'system', 'content': '已核對的 RPG OS v1.01 原規則摘錄：\n' + excerpts('observe')+'\n\n'+WORLD_SYSTEM},
-                      {'role': 'user', 'content': json.dumps(prefs, ensure_ascii=False)}], model_url, 2400, 0.65, timeout=300,response_schema=schema))
+                      {'role': 'user', 'content': json.dumps(prefs, ensure_ascii=False)}], model_url, 4096, 0.65, timeout=600,response_schema=schema))
       except InvalidJSONError as exc:
         raise RuleError('新世界草案未能完整產生，尚未建立或切換世界。你的設定與目前故事仍保留，請稍後再試。') from exc
     if not isinstance(plan,dict) or not all(isinstance(plan.get(key),dict) for key in ('player','npc','location')) or not all(isinstance(plan[key].get('name'),str) for key in ('player','npc','location')):
