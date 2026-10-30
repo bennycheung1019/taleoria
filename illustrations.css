@@ -1,4 +1,4 @@
-.media-tools{display:flex;align-items:center;gap:6px;z-index:4}
+.media-tools{position:relative;display:flex;align-items:center;gap:6px;z-index:4}
 .media-moment-tools{margin-top:16px}
 .turn-illustration-art{position:relative;overflow:hidden;aspect-ratio:4/3;max-height:420px;margin-top:16px;border-radius:12px;background:var(--soft);cursor:zoom-in}
 .turn-illustration-art[hidden]{display:none}

@@ -52,6 +52,35 @@ progressive 故事只有短骨架。玩家實際探索新方向時，在同一�
 若格式要求 establish.chapter 的 planning_truth，這是本章首次使用前的私人準備：依給定真相與現有地點寫一個可選機會，evidence 使用同一真相 ID，標示私人準備的來源，不是當下公開見聞。這不代表玩家已探索、接受、發現線索或推進章節；日常/OOC 仍正常回應，不因私人備註在敘事催主線。已準備的章節不重寫。
 只回傳 {"player_power_uses":[],"establish":{"people":[],"chapter":null},"narration":"完整故事或 OOC 回覆","changes":{}}。'''
 
+# Same host contract in a shorter form for small local contexts. The original
+# RPG OS source excerpts remain verbatim; no extra model call or story summary.
+COMPACT_SYSTEM='''依 RPG OS v1.01 Understand→Establish→Resolve→Portray 主持；程式只存檔及核對玩家超自然能力來源。只寫繁體中文自然敘事，名稱中文（English）。完整回答最後 user，保留短句、粵語、否定、OOC、內在意圖與真正台詞的區別；不替玩家添加台詞、感受、行動或選擇。宣告是嘗試，不保證成功。
+current_snapshot 是目前資料，其後 user/assistant 為依序發生的歷史；history_index 的地點與 witnesses 限制感知。state_provenance 的版本只表示欄位更新時間，舊值不自動失效；已接受的較新事件優先，不重演歷史。bookkeeping 不完整仍已發生。NPC 只知自己感知的事，不讀玩家內心。
+player_power_uses 僅列玩家實際嘗試的超自然能力 {ability_id,manifested}；普通動作、工具、假設、提問用 []。沿用 player_ability_record，無既定來源就零作用，不能本輪覺醒、自授或倒造來源；局部作用、感知、精神壓力或被抵抗也算 manifested:true。未登記 ID 留空。
+依人物人格、情緒、關係、所知與代價作自主反應，保留因果、數量、身分、能力、地理、死亡及已發生後果。narration 約一百二十至二百五十字完整故事或 OOC 回覆，不寫技術清單、內部 ID、選項，不要求玩家操作檔案。
+changes 只列實際變化，無則 {}；沿用人物與地點 ID，移動、裝備、外顯狀況同步保存。scene_people 是未載入詳情的在場索引，nearby_characters 在鄰處；不可重建、搬人或使遠處人物回應。人群先用地點 crowd 背景；首次個別互動只在 establish.people 建立一至三名 {id,name,species,role,description,activity,stance,concern,knowledge:[]}，每欄短句。原人物更新 changes.npcs；持續交往才 developed。scene_focus 列本輪互動 ID，同處不等於聽到私語。
+公開人物筆記 changes.player_view 與 npcs 並列；facts 用主題鍵及 {text,kind:said|observed,evidence}，relationship/condition 用 {text,evidence}。evidence 摘錄本輪 narration 至少四字；只存玩家已學內容，不公開內心。只有公開筆記用 text/evidence，內部 encounter 各值仍是字串。重要共同經歷可寫人物 memory_note:{text,evidence}；inner_life.memories 是陣列，不能改寫舊事。
+story_director 是私密規劃，低於現況與玩家自主。日常/OOC 不推進主線，不按回合催促，不重送拒絕線索，不移人移地、復活或取消後果。探索才在 establish.chapter 或 changes.story_expand 追加本輪用到的小段，沿用固定真相、既有 ID，人物地點先建立再依賴，沒有則 null。若格式要求 planning_truth，首次私人準備的 evidence 使用同一真相 ID；不代表公開、接受或進展。實際進展才記 changes.story_update {chapter,opportunities:{機會ID:presented|followed|declined|lost},revealed:[真相ID],status:active|paused|resolved|abandoned,summary,evidence}，evidence 摘錄本輪敘事。
+只回傳 {"player_power_uses":[],"establish":{"people":[],"chapter":null},"narration":"完整自然回覆","changes":{}}；未變欄位不重抄，資料整理不得混入 narration。'''
+
+
+def working_people(people, text, memory_limit=6):
+    """Remove duplicate archives in every projection, including budget retries."""
+    from .scene_memory import recall
+    for npc in people.values():
+        npc.pop('dialogue',None)
+        npc['knowledge']=recall(npc.get('knowledge',[]),text,memory_limit)
+        life=npc.get('inner_life',{})
+        if isinstance(life,dict):
+            if isinstance(life.get('memories'),list):life['memories']=recall(life['memories'],text,memory_limit)
+            if isinstance(life.get('personality_history'),list):life['personality_history']=recall(life['personality_history'],text,2)
+        profile=npc.get('player_view',{})
+        if isinstance(profile,dict):
+            if isinstance(profile.get('facts'),dict):profile['facts']={key:{field:value for field,value in note.items() if field in ('text','kind')} for key,note in profile['facts'].items()}
+            for field in ('relationship','condition'):
+                if isinstance(profile.get(field),dict):profile[field]={'text':profile[field]['text']}
+    return people
+
 
 PUBLIC_NOTE={'type':'object','properties':{'text':{'type':'string','minLength':1,'maxLength':240},
     'evidence':{'type':'string','minLength':4,'maxLength':240}},'required':['text','evidence'],'additionalProperties':False}
@@ -287,15 +316,7 @@ def reply(state,text,base_url,recent=None,state_provenance=None):
     from .scene_memory import project,recall
     context.update(project(state,original))
     context.pop('scene_memory',None)
-    for npc in context['npcs'].values():
-        life=npc.get('inner_life',{})
-        if isinstance(life,dict) and isinstance(life.get('memories'),list):life['memories']=life['memories'][-6:]
-        npc.pop('dialogue',None)  # Exact recent exchanges are provided separately.
-        profile=npc.get('player_view',{})
-        if isinstance(profile,dict):
-            if isinstance(profile.get('facts'),dict):profile['facts']={key:{field:value for field,value in note.items() if field in ('text','kind')} for key,note in profile['facts'].items()}
-            for field in ('relationship','condition'):
-                if isinstance(profile.get(field),dict):profile[field]={'text':profile[field]['text']}
+    working_people(context['npcs'],original)
     from .references import referenced_characters
     context['referenced_characters']=referenced_characters(state,{'text':original})
     # The complete geography remains persistent. Distant descriptions are only
@@ -339,13 +360,14 @@ def reply(state,text,base_url,recent=None,state_provenance=None):
     # Use one system message for local chat-template compatibility. Put the
     # response contract after the reference material, rather than letting the
     # document/table format become the model's last example of an answer.
+    instructions=SYSTEM
     def compose(rows):
         history_index=[{key:row[key] for key in ('revision','location','witnesses','bookkeeping') if key in row} for row in rows]
         snapshot=json.dumps({'current_snapshot':context,
                              'state_provenance':state_provenance or {'snapshot_revision':state['revision']},
                              'history_index':history_index},ensure_ascii=False,separators=(',',':'))
         messages=[{'role':'system','content':rules_packet()+'\n\n本回合狀態資料：\n'+snapshot+
-                   '\n\n主持與輸出要求：\n'+SYSTEM+
+                   '\n\n主持與輸出要求：\n'+instructions+
                    '\n只在 narration 寫給玩家的自然回覆，沿用已確立的數量、人物及事實。資料整理放 changes；不要在 narration 列出 current_snapshot、state_provenance、history_index、內部 ID、技術清單或下一步選項。'}]
         for row in rows:
             messages.append({'role':'user','content':row.get('declaration','') or '【先前已發生的場景紀錄，沒有新的玩家宣告】'})
@@ -358,6 +380,10 @@ def reply(state,text,base_url,recent=None,state_provenance=None):
     limit=budget(base_url,output_max)
     if limit:
         measured=count(base_url,messages)
+        if measured is not None and measured>limit:
+            # Compact repeated host guidance before discarding actual dialogue.
+            instructions=COMPACT_SYSTEM
+            messages=compose(past);measured=count(base_url,messages)
         if measured is not None and measured>limit and director:
             # Prefer the live scene and recent dialogue to distant plot notes.
             compact={key:value for key,value in director.items() if key not in ('authority','ending_conflict','established_threads','chapters')}
@@ -371,7 +397,9 @@ def reply(state,text,base_url,recent=None,state_provenance=None):
             smaller=budget(base_url,1200)
             if last_size is not None and smaller and last_size<=smaller:
                 output_max=1200;limit=smaller
-        while measured is not None and measured>limit and past:
+        # Keep the latest exchange while shrinking duplicate state. Dropping it
+        # first made even a short follow-up lose the dialogue it depended on.
+        while measured is not None and measured>limit and len(past)>1:
             past=past[1:];messages=compose(past);measured=count(base_url,messages)
         if measured is not None and measured>limit and 'story_director' in context:
             # Keep truths and usable progress IDs even on a crowded turn.
@@ -391,6 +419,7 @@ def reply(state,text,base_url,recent=None,state_provenance=None):
             # normal working set. Explicitly named people remain prioritized.
             smaller=project(state,original,full_limit=maximum,index_limit=4)
             for key in ('npcs','scene_people','scene_scope'):context[key]=smaller[key]
+            working_people(context['npcs'],original,2)
             if 'canon' in context:
                 keep={state['pc']['id'],*context['npcs']}
                 context['canon']['actors']={key:value for key,value in context['canon']['actors'].items() if key in keep}
@@ -398,8 +427,16 @@ def reply(state,text,base_url,recent=None,state_provenance=None):
             context['nearby_characters']={key:{field:value for field,value in npc.items() if field in ('name','location','alive','description')}
                 for key,npc in context.get('nearby_characters',{}).items()}
             messages=compose(past);measured=count(base_url,messages)
+        if measured is not None and measured>limit and output_max>1200:
+            smaller=budget(base_url,1200)
+            if smaller and smaller>limit:
+                output_max=1200;limit=smaller
+        if measured is not None and measured>limit and past:
+            # Last resort for unusually long previous replies; saved originals
+            # are unchanged and the current player's input is never truncated.
+            past=[];messages=compose(past);measured=count(base_url,messages)
         if measured is not None and measured>limit:
-            raise RuleError('這次涉及的內容較多，請把行動分成幾段描述；目前故事進度仍保留。')
+            raise RuleError('本機模型的上下文空間仍不足，這次行動尚未執行，故事已保留。可縮短輸入或增加模型的上下文容量後重試。')
     with stage('RPG OS 主持與敘事'):
         raw=_complete(messages,base_url,output_max,.45,response_schema=reply_schema(state),raw=True)
     result=establish_details(state,decode_reply(raw))

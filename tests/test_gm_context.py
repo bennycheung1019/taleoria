@@ -14,6 +14,58 @@ class GMContextTests(unittest.TestCase):
     def setUp(self):
         self.state=new_campaign();self.state['pc']['location']='pier'
 
+    def test_small_backend_compacts_host_guidance_and_keeps_latest_exchange(self):
+        before=copy.deepcopy(self.state)
+        recent=[{'revision':i,'declaration':'問題'+str(i),'narration':'答覆'+str(i)} for i in range(1,5)]
+        def measured(url,messages):
+            system=messages[0]['content']
+            if '單一 system 內的 current_snapshot' in system:return 9500
+            data=json.loads(system.split('本回合狀態資料：\n')[1].split('\n\n主持與輸出要求：')[0])
+            if len(data['current_snapshot']['npcs'])>1:return 7800
+            return 9500 if len(messages)>4 else 6750 if len(messages)>2 else 6400
+        with patch('kobold_rpg.context_budget.budget',side_effect=lambda url,n:8192-n-128),\
+             patch('kobold_rpg.context_budget.count',side_effect=measured),\
+             patch('kobold_rpg.model._complete',return_value={'narration':'安雅回答你的提問。','changes':{}}) as model:
+            reply(self.state,'問安雅船期。','http://mock',recent=recent)
+        messages=model.call_args.args[0]
+        self.assertEqual(len(messages),4)
+        self.assertEqual(messages[1]['content'],'問題4')
+        self.assertEqual(messages[-1]['content'],'問安雅船期。')
+        self.assertEqual(model.call_args.args[2],1200)
+        from kobold_rpg.gm import rules_packet,COMPACT_SYSTEM
+        self.assertIn(rules_packet(),messages[0]['content'])
+        self.assertIn(COMPACT_SYSTEM,messages[0]['content'])
+        self.assertEqual(self.state,before)
+
+    def test_projection_retry_does_not_restore_large_dialogue_archives(self):
+        self.state['npcs']['hark']['location']='pier'
+        npc=self.state['npcs']['anya']
+        npc['dialogue']={'archive':'ARCHIVE-NEVER-IN-PROMPT'*200}
+        npc['knowledge']=['知道的事情'+str(i) for i in range(80)]
+        npc.setdefault('inner_life',{})['memories']=['共同回憶'+str(i) for i in range(80)]
+        before=copy.deepcopy(self.state)
+        def measured(url,messages):
+            data=json.loads(messages[0]['content'].split('本回合狀態資料：\n')[1].split('\n\n主持與輸出要求：')[0])
+            people=data['current_snapshot']['npcs']
+            self.assertNotIn('ARCHIVE-NEVER-IN-PROMPT',messages[0]['content'])
+            for person in people.values():self.assertLessEqual(len(person.get('knowledge',[])),6)
+            return 7800 if len(people)>1 else 5000
+        with patch('kobold_rpg.context_budget.budget',return_value=6000),\
+             patch('kobold_rpg.context_budget.count',side_effect=measured),\
+             patch('kobold_rpg.model._complete',return_value={'narration':'安雅回答。','changes':{}}) as model:
+            reply(self.state,'問安雅。','http://mock')
+        self.assertEqual(self.state,before)
+        self.assertNotIn('ARCHIVE-NEVER-IN-PROMPT',model.call_args.args[0][0]['content'])
+
+    def test_oversized_current_action_is_not_silently_truncated_or_executed(self):
+        from kobold_rpg.engine import RuleError
+        before=copy.deepcopy(self.state)
+        with patch('kobold_rpg.context_budget.budget',return_value=3000),\
+             patch('kobold_rpg.context_budget.count',return_value=9000),\
+             patch('kobold_rpg.model._complete') as model, self.assertRaisesRegex(RuleError,'這次行動尚未執行'):
+            reply(self.state,'這次的完整宣告。','http://mock')
+        model.assert_not_called();self.assertEqual(self.state,before)
+
     def test_history_uses_paired_chat_roles_and_current_input_is_alone(self):
         past=[{'revision':1,'location':'pier','witnesses':['anya'],'bookkeeping':'ready',
                'declaration':'請問船費？','narration':'安雅答：「單程三枚銅幣。」'},

@@ -52,4 +52,4 @@ Vercel 提供網頁，遊戲引擎、SQLite、KoboldCpp 與 Draw Things 留在�
 
 同一個網址的不同分頁不會即時同步故事，更新後需重新整理；不同連接埠可能是不同遊戲服務。建議用一個分頁遊玩。模型仍可能答非所問或記錯，敘事核對不保證完全正確。圖片也不會自動成為世界設定。
 
-程式版本：`0.12.2-local`。逾時會自動重新連接同一次故事生成；每段故事可手動「描繪這一刻」，依當時的公開敘事與人物外觀生成插畫。新回應顯示後會定位到你的上一個行動；能力名稱與圖片按鈕提供滑鼠提示。引擎設計與歷史限制見 [ENGINE.md](docs/ENGINE.md)，人格模型見 [SOCIAL_MODEL.md](docs/SOCIAL_MODEL.md)。授權見 [LICENSE](LICENSE) 與 [THIRD_PARTY.md](THIRD_PARTY.md)。
+程式版本：`0.12.3-local`。逾時會自動重新連接同一次故事生成；每段故事可手動「描繪這一刻」，依當時的公開敘事與人物外觀生成插畫。小型模型會精簡重複提示與人物工作資料，優先保留最近對話。送出後只在故事框內顯示進度，新回應顯示後定位到你的上一個行動，整頁位置不變；能力名稱與圖片按鈕提供滑鼠提示。引擎設計與歷史限制見 [ENGINE.md](docs/ENGINE.md)，人格模型見 [SOCIAL_MODEL.md](docs/SOCIAL_MODEL.md)。授權見 [LICENSE](LICENSE) 與 [THIRD_PARTY.md](THIRD_PARTY.md)。

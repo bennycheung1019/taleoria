@@ -85,3 +85,7 @@ html[data-page="create"] .sidebar{display:none}
 
 /* Setup and other pages use the full content width when the campaign sidebar is hidden. */
 .app-shell:has(>.sidebar[hidden]){grid-template-columns:minmax(0,1fr)}
+
+/* Replacing story turns must not make the browser anchor the outer document
+   to text that just moved inside the independently scrolling story frame. */
+#page-adventure{overflow-anchor:none}
