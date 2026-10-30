@@ -102,7 +102,8 @@ class IllustrationTests(unittest.TestCase):
                 'characters':[{'name':'老麥','description':'礦工'}]}
         plan={'subject':'the rough rock surface','framing':'close_up','details':'Three shallow grooves in the stone.','background':''}
         with patch('kobold_rpg.model._complete',return_value=plan) as model:
-            prompt=translate_prompt(source,'http://model')
+            translated=translate_prompt(source,'http://model')
+        prompt=translated['prompt'];self.assertEqual(translated['framing'],'close_up')
         model.assert_called_once()
         self.assertTrue(prompt.startswith('Close-up of the rough rock surface'))
         self.assertIn('fills the frame',prompt)
@@ -129,6 +130,22 @@ class IllustrationTests(unittest.TestCase):
         self.complete(self.request(kind='moment',subject='1',prompt='Extreme close-up of a rough rock surface'))
         self.assertTrue(self.calls[0]['prompt'].startswith('Extreme close-up'))
         self.assertNotIn('wide view',self.calls[0]['prompt'])
+
+    def test_closeup_discards_distant_background_even_when_model_includes_one(self):
+        prompt=focused_prompt({'subject':'small wedge-shaped stones','framing':'close_up','details':'Lodged between wooden beams.','background':'A vast canyon and distant mine entrance.'})
+        self.assertNotIn('canyon',prompt);self.assertNotIn('mine entrance',prompt)
+
+    def test_closeup_framing_reaches_renderer_without_a_wide_scene_suffix(self):
+        self.engine.record_gm_reply('看碎石',{'narration':'碎石卡在木樑縫隙裡。','changes':{}},'rock',0)
+        self.service.translate=lambda *args:{'prompt':'Close-up of small wedge-shaped rocks, lodged between wooden beams','framing':'close_up'}
+        self.complete(self.request(kind='moment',subject='1'))
+        row=self.calls[0]
+        self.assertEqual(row['framing'],'close_up');self.assertIn('detail study',row['prompt'])
+        self.assertNotIn('narrative scene illustration',row['prompt'])
+        with patch('kobold_rpg.illustrations.http_json',return_value={'images':[PNG]}) as call:self.service._render(row)
+        payload=call.call_args.args[1]
+        self.assertEqual((payload['width'],payload['height']),(768,768))
+        self.assertIn('panorama',payload['negative_prompt'])
 
     def test_unseen_character_is_not_eligible_for_portrait(self):
         with self.assertRaises(RuleError):
