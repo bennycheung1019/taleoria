@@ -1,5 +1,6 @@
 """Read-only chronology for the GM, without judging or rewriting play."""
 import json
+from .story_text import story_text
 
 
 MISSING=object()
@@ -21,7 +22,7 @@ def recent_context(engine,state,limit=4,scan=32):
     for record in records:
         row=record['body'];before=record['before']
         if row['status']!='approved':continue
-        recent.append({'revision':record['revision'],'declaration':row['action']['text'],'narration':row['narration'],
+        recent.append({'revision':record['revision'],'declaration':row['action']['text'],'narration':story_text(row['narration']),
                        'bookkeeping':row.get('bookkeeping','ready'),'location':before['pc']['location'],
                        'witnesses':[key for key,npc in before['npcs'].items()
                                     if npc['known'] and npc['location']==before['pc']['location']]})
@@ -66,7 +67,7 @@ def recalled_context(engine,state,text,exclude=()):
     ignored=set(exclude);result=[]
     for row in rows:
         if row['revision'] in ignored:continue
-        body=json.loads(row['body']);narration=body['narration']
+        body=json.loads(row['body']);narration=story_text(body['narration'])
         result.append({'revision':row['revision'],'declaration':body['action']['text'][:240],
             'narration':narration[:800],'excerpted':len(narration)>800,'referenced_people':ids,
             'scope':'已發生的原文回取，不代表所有在場者都聽到。沿用當時可感知資訊，不重新執行。'})

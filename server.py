@@ -29,6 +29,7 @@ from kobold_rpg.settings import load_settings, validate_settings
 from kobold_rpg.planning import semantic_action
 from kobold_rpg.gm import reply as rpg_os_reply
 from kobold_rpg.gm_context import recent_context,recalled_context
+from kobold_rpg.story_text import story_text
 
 ROOT = Path(__file__).resolve().parent
 
@@ -53,6 +54,7 @@ def make_handler(engine, model_url, token, library=None, enricher=None, planner=
         for row in (engine.history() if rows is None else rows):
             if row['status']=='enrichment':continue
             item = {k: row[k] for k in ('revision', 'status', 'narration', 'at')}
+            item['narration']=story_text(item['narration'])
             declaration = row.get('action', {}).get('text', '')
             item['declaration'] = '' if declaration.startswith('【') else declaration
             result.append(item)
@@ -147,6 +149,7 @@ def make_handler(engine, model_url, token, library=None, enricher=None, planner=
                             if recalled:provenance['recalled_exchanges']=recalled
                             response=gm(state,body.get('text'),model_url,recent=recent,state_provenance=provenance)
                             result=engine.record_gm_reply(body.get('text'),response,body['request_id'],state['revision'])
+                        result['narration']=story_text(result['narration'])
                         result={**display(result,aliases(engine.state())),'turn':turn(engine,result['revision']),
                                 'frame':frame(engine),'panel_snapshot':panel_snapshot(engine),'views':update_status(engine)}
                         success=True

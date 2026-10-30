@@ -332,15 +332,16 @@ class Engine:
     def record_gm_reply(self,text,reply,request_id,revision):
         """Persist the RPG OS GM's reply without a second gameplay referee."""
         from .gm import record_changes
+        from .story_text import story_text
         original=require_text(text,'你的行動或台詞')
-        narration=require_text(reply.get('narration'),'主持人回覆',20000)
+        narration=require_text(story_text(reply.get('narration')),'主持人回覆',20000)
         with self.connect() as db:
             db.execute('BEGIN IMMEDIATE')
             prior=db.execute('SELECT body,after_state FROM journal WHERE request_id=?',(request_id,)).fetchone()
             if prior:
                 body=json.loads(prior['body'])
                 if body['action']['text']!=original:raise RuleError('同一行動識別不能改成另一句宣告。')
-                return {'status':body['status'],'narration':body['narration'],'revision':json.loads(prior['after_state'])['revision']}
+                return {'status':body['status'],'narration':story_text(body['narration']),'revision':json.loads(prior['after_state'])['revision']}
             state=json.loads(db.execute('SELECT body FROM state WHERE id=1').fetchone()[0])
             if state['revision']!=revision:raise RuleError('故事在生成期間已更新，請重新載入目前進度。')
             try:after,bookkeeping=record_changes(state,reply.get('changes',{}),revision+1,narration)

@@ -9,6 +9,7 @@ import json
 import re
 from .engine import RuleError, require_text
 from .rulebook import verified_sources, section
+from .story_text import story_text
 
 
 def rules_packet():
@@ -218,9 +219,14 @@ def _incomplete_header(text):
 
 
 def decode_reply(raw):
+    def structured(text):return text.startswith(('{','[')) or bool(re.match(r'^```(?:json)?\s*[{\[]',text,re.I))
     if isinstance(raw,dict):value=raw
     elif isinstance(raw,str):
         text=raw.strip()
+        clean=story_text(text)
+        if clean!=text and not structured(text):
+            if clean:return {'narration':clean,'changes':{},'bookkeeping':'incomplete'}
+            raise RuleError('模型這次沒有提供文字回覆。')
         try:
             from .model import parse_proposal
             value=parse_proposal(text)
@@ -231,19 +237,21 @@ def decode_reply(raw):
             if match:
                 try:
                     narrative,_=json.JSONDecoder().raw_decode(text[match.end():])
-                    if isinstance(narrative,str) and narrative.strip():
+                    if isinstance(narrative,str) and story_text(narrative).strip():
                         head=_incomplete_header(text)
-                        return {'narration':narrative,'changes':{},'bookkeeping':'incomplete',
+                        return {'narration':story_text(narrative),'changes':{},'bookkeeping':'incomplete',
                             'establish':head.get('establish'),'player_power_uses':head.get('player_power_uses',[])}
                 except (ValueError,TypeError):pass
-            if text.startswith(('{','[')):
+            if structured(text):
                 raise RuleError('這次故事回覆尚未完成，進度仍保留，請再試一次。')
-            if text:return {'narration':text,'changes':{},'bookkeeping':'plain_reply'}
+            clean=story_text(text)
+            if clean:return {'narration':clean,'changes':{},'bookkeeping':'plain_reply'}
             raise RuleError('模型這次沒有回覆，故事尚未改變。請確認模型連線後再試。')
     else:raise RuleError('模型這次沒有提供文字回覆。')
-    narrative=value.get('narration') if isinstance(value,dict) else None
+    narrative=story_text(value.get('narration')) if isinstance(value,dict) else None
     if not isinstance(narrative,str) or not narrative.strip():
-        if isinstance(raw,str) and raw.strip():return {'narration':raw.strip(),'changes':{},'bookkeeping':'plain_reply'}
+        if isinstance(raw,str) and not structured(raw.strip()) and story_text(raw.strip()):
+            return {'narration':story_text(raw.strip()),'changes':{},'bookkeeping':'plain_reply'}
         raise RuleError('模型這次沒有提供文字回覆。')
     changes=value.get('changes',{})
     return {'narration':narrative,'changes':changes if isinstance(changes,dict) else {},
@@ -326,7 +334,8 @@ def reply(state,text,base_url,recent=None,state_provenance=None):
     # Equipment and current encounter fields describe today; opening prose is
     # only a baseline. Give the GM provenance rather than a stale dialogue task.
     context['host_mode']='RPG OS GM; pre-turn player supernatural ability source check; no general gameplay approval'
-    past=[row for row in recent or [] if isinstance(row,dict) and isinstance(row.get('narration'),str)]
+    past=[{**row,'narration':story_text(row['narration'])} for row in recent or []
+          if isinstance(row,dict) and isinstance(row.get('narration'),str)]
     # Use one system message for local chat-template compatibility. Put the
     # response contract after the reference material, rather than letting the
     # document/table format become the model's last example of an answer.
@@ -448,6 +457,16 @@ def record_changes(state,changes,revision,narration=''):
                 memory_notes={name:value['memory_note'] for name,value in patch.items() if 'memory_note' in value}
                 patch={name:{field:value for field,value in npc.items() if field not in ('player_view','memory_note')} for name,npc in patch.items()}
                 for name,npc in patch.items():
+                    if 'encounter' in npc:
+                        encounter=npc['encounter']
+                        if isinstance(encounter,dict):
+                            clean={}
+                            for field,value in encounter.items():
+                                if isinstance(value,dict) and set(value)<={'text','evidence'} and isinstance(value.get('text'),str):value=value['text']
+                                if isinstance(value,str):clean[field]=value
+                                else:partial=True
+                            npc['encounter']=clean
+                        else:npc.pop('encounter');partial=True
                     if isinstance(npc.get('knowledge'),list):
                         old=state['npcs'].get(name,{}).get('knowledge',[])
                         if isinstance(old,list):

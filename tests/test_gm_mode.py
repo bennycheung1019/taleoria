@@ -100,6 +100,29 @@ class GMDefaultAPITests(unittest.TestCase):
             response=conn.getresponse();return response.status,json.loads(response.read())
         finally:conn.close()
 
+    def test_old_metadata_tail_is_hidden_in_session_history_and_duplicate_response_without_rewriting_journal(self):
+        from test_narration_boundary import LEAK,PROSE
+        state=self.engine.state()
+        with self.engine.connect() as db:
+            self.engine._append(db,state,copy.deepcopy(state),'legacy',{'status':'approved',
+                'action':{'kind':'freeform','text':'問路'},'narration':LEAK,'events':[],'bookkeeping':'ready'})
+        with self.engine.connect() as db:before=tuple(db.execute('SELECT body,hash FROM journal').fetchone())
+        for path in ('/api/session','/api/history'):
+            conn=http.client.HTTPConnection('127.0.0.1',self.server.server_port,timeout=5)
+            try:
+                conn.request('GET',path,headers={'X-RPG-Token':'test'})
+                response=conn.getresponse();data=json.loads(response.read())
+            finally:conn.close()
+            self.assertEqual(response.status,200)
+            rows=data['history'] if path=='/api/session' else data
+            self.assertEqual(rows[0]['narration'],PROSE)
+        with patch('kobold_rpg.model._complete',side_effect=AssertionError('never replay this turn')):
+            code,result=self.send('問路',request='legacy')
+        self.assertEqual(code,200);self.assertEqual(result['narration'],PROSE)
+        self.assertEqual(result['turn']['narration'],PROSE)
+        with self.engine.connect() as db:after=tuple(db.execute('SELECT body,hash FROM journal').fetchone())
+        self.assertEqual(after,before);self.assertTrue(self.engine.verify())
+
     def test_default_route_has_no_parser_rule_veto_or_second_model_audit(self):
         text='OOC: why can I not use fire magic?'
         raw=json.dumps({'narration':'OOC：目前尚未學會魔法，施法仍要依世界事實裁定。','changes':{}},ensure_ascii=False)
