@@ -67,6 +67,10 @@ def focused_dialogue(state,text,npc_id,recent,base_url,complete,
     history=[{'revision':row['revision'],'player':row['declaration'],
               'narration':row['narration'],'npc_present':npc_id in row.get('witnesses',[])}
              for row in recent_rows]
+    interpreted_question=re.sub(r'\bask\s+(?:him|her|them)\b',
+                                lambda match:re.sub(r'\b(?:him|her|them)\b',npc['name'],
+                                                    match.group(),flags=re.I),
+                                text,count=1,flags=re.I)
     context={'place':state['locations'][here],
              'npc':{key:npc.get(key) for key in
                     ('name','description','anchor','encounter','knowledge','conditions')},
@@ -75,8 +79,8 @@ def focused_dialogue(state,text,npc_id,recent,base_url,complete,
              'older_sourced_object_events':(older_object_events or [])[-2:],
              'player_question':text,'resolved_reference':resolved_reference,
              'interpreted_question':(re.sub(r'佢|它|嗰個|那個',resolved_reference['name'],
-                                            text,count=1)
-                                     if resolved_reference else text)}
+                                            interpreted_question,count=1)
+                                     if resolved_reference else interpreted_question)}
     instruction=('你只回覆這次玩家對在場人物的問題，寫一至兩段自然繁體中文對話與可觀察反應。'
                  '人物只知道自己的紀錄、親身可感知的已發生事件，或玩家現在說出口的內容；'
                  'npc_present 不代表知道門後秘密。沿用最近完整對話的先後；'

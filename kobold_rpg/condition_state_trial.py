@@ -12,7 +12,7 @@ from .dynamic_pending_trial import _dice,_row,_save_once
 from .engine import RuleError,require_text
 from .gm_context import recent_context,recalled_object_context
 from .model import _complete,parse_proposal
-from .names import chinese
+from .names import PAIR,chinese
 from .social_values_trial import select_social_context,resolve_social,render_social
 from .structured_state_trial import validate_values,resolve_values,render_host_narration
 
@@ -27,6 +27,36 @@ NARRATION_SCHEMA={'type':'object','properties':{
                   'required':['narration'],'additionalProperties':False}
 DAMAGE_BASE={'fragile':35,'light':30,'ordinary':25,'reinforced':20,
              'fortified':15,'extraordinary':10}
+
+
+class UnsupportedSocialInteraction(RuleError):
+    """A new-world NPC has no registered numeric social contract yet."""
+
+
+def _addressed_person_pronoun(text):
+    return bool(re.search(r'\bask\s+(?:him|her|them)\b',text,re.I) or
+                re.search(r'問\s*(?:佢|他|她|嗰個人|那個人)',text))
+
+
+def _mentions_npc_name(name,text):
+    if name in text or chinese(name) in text:return True
+    pair=PAIR.fullmatch(name.strip())
+    return bool(pair and re.search(r'(?<![A-Za-z])'+re.escape(pair[2])+r'(?![A-Za-z])',
+                                   text,re.I))
+
+
+def _information_question(text):
+    if ('？' in text or '?' in text) and not re.search(
+            r'請|可否|能否|願意|幫我|放我|給我',text):
+        return True
+    if re.search(r'\bask\s+(?:him|her|them)\s+to\b',text,re.I):
+        return False
+    if re.search(r'\bask\b.*\b(?:why|what|who|where|when|how|whether|if|about)\b',
+                 text,re.I):
+        return True
+    return bool('問' in text and any(word in text for word in
+                ('點解','為何','為甚麼','為什麼','點樣','如何','邊度','哪裡',
+                 '乜','甚麼','什麼','幾時','誰','邊個')))
 
 
 def _condition_sentence(entity):
@@ -157,6 +187,16 @@ def prepare_condition_decision(engine,request_id,revision,text,base_url,complete
     action=intent['steps'][0]['action']
     if action=='persuade':
         npc_id=intent['steps'][0]['target_id']
+        npc=state['npcs'].get(npc_id)
+        if (isinstance(npc,dict) and npc.get('known') and
+                npc.get('location')==state['pc']['location'] and
+                not isinstance(npc.get('social_state'),dict)):
+            raise UnsupportedSocialInteraction('此人物尚未建立數值社交規則。')
+        if npc_id is None and _addressed_person_pronoun(original):
+            present=[person for person in state['npcs'].values() if
+                     person.get('known') and person.get('location')==state['pc']['location']]
+            if len(present)==1 and not isinstance(present[0].get('social_state'),dict):
+                raise UnsupportedSocialInteraction('此人物尚未建立數值社交規則。')
         proposal=json.loads(row['proposal']) if row['proposal'] is not None else None
         if proposal is None:
             proposal,_=select_social_context(state,npc_id,original,base_url,complete)
@@ -348,14 +388,18 @@ def make_condition_gm(engine,complete=None,observations=None):
         def measured(messages,url,maximum,temperature,**kwargs):
             calls.append({'input_tokens':count(url,messages),'output_cap':maximum})
             return complete(messages,url,maximum,temperature,**kwargs)
-        if ('？' in original or '?' in original) and not re.search(
-                r'請|可否|能否|願意|幫我|放我|給我',original):
+        if _information_question(original):
             here=state['pc']['location']
+            present=[key for key,npc in state['npcs'].items() if
+                     npc.get('known') and npc.get('location')==here]
             people=[key for key,npc in state['npcs'].items() if
                     npc.get('known') and npc.get('location')==here and
-                    npc.get('name') and (npc['name'] in original or
-                                         chinese(npc['name']) in original)]
+                    npc.get('name') and _mentions_npc_name(npc['name'],original)]
             if len(people)>1:raise RuleError('問題涉及多名人物，請講明目標。')
+            if not people and _addressed_person_pronoun(original):
+                if len(present)>1:
+                    raise RuleError('附近有多名人物，請講明你想問邊位；故事未執行。')
+                people=present
             local_object_mentioned=any(item.get('location')==here and
                 item.get('name') and (item['name'] in original or
                 chinese(item['name']) in original)
