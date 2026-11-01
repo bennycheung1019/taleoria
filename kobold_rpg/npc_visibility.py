@@ -38,6 +38,12 @@ def hide_name(text, npc, *, before=None):
         return text
     end = len(text) if before is None else before
     left, right = text[:end], text[end:]
+    # A hidden internal name cannot be introduced by inventing a player-given
+    # nickname. Remove that unsupported aside before masking the name itself.
+    for candidate in (canonical, short):
+        if candidate:
+            left = re.sub(r'——\s*你(?:稱呼|叫|喊|稱)(?:他|她|佢)(?:為|做)?\s*' +
+                          re.escape(candidate) + r'\s*——', '', left)
     left = left.replace(canonical, label)
     if short != canonical and len(short) > 1:
         left = left.replace(short, label)

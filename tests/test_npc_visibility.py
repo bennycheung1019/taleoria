@@ -3,14 +3,22 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from kobold_rpg.engine import Engine
-from kobold_rpg.gm import establish_details
+from kobold_rpg.gm import EntryContinuityError,establish_details,reply as gm_reply
 from kobold_rpg.library import CampaignLibrary
+from kobold_rpg.npc_visibility import hide_name
 from test_library import fixture
 
 
 class NPCVisibilityTests(unittest.TestCase):
+    def test_hidden_name_does_not_invent_player_given_nickname(self):
+        npc={'name':'阿海（Ah Hai）','name_known':False,
+             'public_name':'一名年輕漁民','description':'一名年輕漁民走近。'}
+        shown=hide_name('那年輕漁民——你稱呼他為阿海——衝到你面前。阿海喘著氣。',npc)
+        self.assertEqual(shown,'那年輕漁民衝到你面前。一名年輕漁民喘著氣。')
+
     def test_opening_and_card_wait_for_spoken_introduction(self):
         candidate=fixture()
         candidate['plan']['player']['background'] += '小禾尚未認識這位旅人。'
@@ -41,7 +49,8 @@ class NPCVisibilityTests(unittest.TestCase):
         candidate=fixture();state=copy.deepcopy(candidate['seed'])
         person={'id':'npc_1_1','name':'老陳（Old Chen）','species':'人類','role':'農夫',
                 'description':'一位鬚髮花白的農夫，提著菜籃。','activity':'從居民中走近',
-                'stance':'願意交談','concern':'菜園收成','knowledge':[]}
+                'stance':'願意交談','concern':'菜園收成','knowledge':[],
+                'entry_from':'start'}
         draft={'establish':{'people':[person]},'narration':'老陳從附近人群走近，向你點頭。',
                'changes':{'npcs':{'npc_1_1':{'location':'near_1'}}}}
         prepared=establish_details(state,draft)
@@ -54,6 +63,58 @@ class NPCVisibilityTests(unittest.TestCase):
             self.assertNotIn('npc_1_1',engine.public_state()['people'])
             engine.record_gm_reply('你叫咩名？',{'narration':'那位農夫說：「我叫老陳。」','changes':{}},'name',1)
             self.assertEqual(engine.public_state()['people']['npc_1_1']['name'],'老陳（Old Chen）')
+            self.assertTrue(engine.verify())
+
+    def test_market_person_needs_witnessed_arrival_before_local_interaction(self):
+        state=fixture()['seed']
+        state['locations']['near_1']['name']='漁市場（Fish Market）'
+        person={'id':'npc_1_1','name':'阿海（Ah Hai）','species':'人類','role':'年輕漁民',
+                'description':'一名年輕漁民，穿著灰色短襖。','activity':'趕來木屋',
+                'stance':'願意交談','concern':'市場爭執','knowledge':[],
+                'entry_from':'near_1'}
+        narration='老者口中的年輕人突然在你面前回答：「因為你是劍客。」'
+        draft={'establish':{'people':[person]},'narration':narration,'changes':{}}
+        with self.assertRaises(EntryContinuityError):
+            establish_details(state,draft)
+        claimed=copy.deepcopy(draft)
+        claimed['narration']='老者說：「年輕漁民從市場跑到木屋門前。」年輕人回答你。'
+        with self.assertRaises(EntryContinuityError):
+            establish_details(state,claimed)
+        wrong_origin=copy.deepcopy(draft)
+        wrong_origin['establish']['people'][0]['entry_from']='start'
+        wrong_origin['narration']='年輕漁民從市場跑到木屋門前，停下腳步後才回答。'
+        with self.assertRaises(EntryContinuityError):
+            establish_details(state,wrong_origin)
+        still_remote=copy.deepcopy(wrong_origin)
+        still_remote['narration']='年輕漁民站在漁市場路邊，向你揮手。'
+        with self.assertRaises(EntryContinuityError):
+            establish_details(state,still_remote)
+        arrived=copy.deepcopy(draft)
+        arrived['narration']='年輕漁民從市場跑到木屋門前，停下腳步後才回答你。'
+        prepared=establish_details(state,arrived)
+        self.assertEqual(prepared['changes']['npcs']['npc_1_1']['location'],'start')
+        approached=copy.deepcopy(draft)
+        approached['narration']='年輕漁民阿海喘著粗氣，快步走到你面前，才開口回答。'
+        self.assertEqual(establish_details(state,approached)['changes']['npcs']['npc_1_1']['location'],'start')
+
+    def test_gm_retries_unwitnessed_person_before_any_story_is_saved(self):
+        state=fixture()['seed']
+        state['locations']['near_1']['name']='漁市場（Fish Market）'
+        person={'id':'npc_1_1','name':'阿海（Ah Hai）','species':'人類','role':'年輕漁民',
+                'description':'一名年輕漁民，穿著灰色短襖。','activity':'趕來木屋',
+                'stance':'願意交談','concern':'市場爭執','knowledge':[],
+                'entry_from':'near_1'}
+        bad={'player_power_uses':[],'establish':{'people':[person]},
+             'narration':'年輕人突然在你面前回答。','changes':{}}
+        good={**bad,'narration':'年輕漁民從市場跑到木屋門前，停下腳步才回答。'}
+        with tempfile.TemporaryDirectory() as folder:
+            engine=Engine(Path(folder)/'copy.sqlite3',seed=state)
+            with (patch('kobold_rpg.model._complete',side_effect=[bad,good]) as model,
+                  patch('kobold_rpg.context_budget.budget',return_value=None)):
+                result=gm_reply(engine.state(),'我問他為何來找我','http://none')
+            self.assertEqual(model.call_count,2)
+            self.assertIn('從市場跑到木屋門前',result['narration'])
+            self.assertEqual(engine.state()['revision'],0)
             self.assertTrue(engine.verify())
 
 

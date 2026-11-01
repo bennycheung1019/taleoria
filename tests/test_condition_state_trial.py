@@ -11,6 +11,7 @@ from unittest.mock import patch
 from kobold_rpg.calibrated_difficulty_trial import register_force_profile
 from kobold_rpg.condition_state_trial import (apply_condition_result,
     make_condition_gm,narrate_condition,prepare_condition_decision)
+from kobold_rpg.conversation_target import conversation_target
 from kobold_rpg.engine import Engine,RuleError
 from test_dynamic_values_trial import object_fixture
 from test_library import fixture as world_fixture
@@ -45,6 +46,39 @@ class ConditionStateTrialTests(unittest.TestCase):
             with self.assertRaisesRegex(RuleError,'請講明你想問邊位'):
                 gm(state,'can you tell me more about this place','http://none')
             self.assertEqual(engine.state()['revision'],0)
+
+    def test_unaddressed_followup_uses_last_interlocutor_then_explicit_switch(self):
+        seed=world_fixture()['seed'];other=copy.deepcopy(seed['npcs']['guide'])
+        other.update(id='neighbor',name='阿海（Ah Hai）',public_name='一位年輕漁民',
+                     name_known=False)
+        seed['npcs']['neighbor']=other
+        with tempfile.TemporaryDirectory() as folder:
+            engine=Engine(Path(folder)/'world.sqlite3',seed=seed)
+            engine.record_gm_reply('【開場】',{'narration':'一位店主在門邊。',
+                'changes':{'scene_focus':['guide']}},'opening',0)
+            engine.record_gm_reply('watch him',{'narration':'店主走近並向你說話。',
+                'changes':{'scene_focus':['guide']}},'watch',1)
+            self.assertEqual(conversation_target(engine.state(),'i asked "why me"'),'guide')
+            observed=[]
+            def dialogue(state,text,npc_id,*args,**kwargs):
+                observed.append(npc_id)
+                return ('店主回答了你的問題。',120)
+            gm=make_condition_gm(engine)
+            with (patch('kobold_rpg.condition_state_trial.focused_dialogue',
+                        side_effect=dialogue),
+                  patch('kobold_rpg.condition_state_trial.prepare_condition_decision',
+                        side_effect=AssertionError('dialogue must not create NPC'))):
+                first=gm(engine.state(),'i asked "why me"','http://none')
+                self.assertEqual(first['changes']['scene_focus'],['guide'])
+                engine.record_gm_reply('i asked "why me"',first,'question',2)
+                second=gm(engine.state(),'我問年輕人：「你叫咩名？」','http://none')
+                self.assertEqual(second['changes']['scene_focus'],['neighbor'])
+                engine.record_gm_reply('我問年輕人：「你叫咩名？」',second,'switch',3)
+                third=gm(engine.state(),'why me?','http://none')
+            self.assertEqual(third['changes']['scene_focus'],['neighbor'])
+            self.assertEqual(observed,['guide','neighbor','neighbor'])
+            self.assertEqual(set(engine.state()['npcs']),{'guide','neighbor'})
+            self.assertTrue(engine.verify())
 
     def test_injected_http_turn_commits_numeric_condition_once(self):
         seed=register_force_profile(object_fixture(),'side_door','reinforced',

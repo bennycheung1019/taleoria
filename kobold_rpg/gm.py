@@ -39,13 +39,13 @@ def rules_packet():
 SYSTEM='''依前述 RPG OS v1.01 原文執行 Understand → Establish → Resolve → Portray。你主持與裁定，程式只核對玩家超自然能力的既定來源；沒有普通行動或敘事批准者。
 只用繁體中文自然敘事，名稱用中文（English Name）。保留玩家原意、粵語、短句、否定及連續行動；分清真正說出口的台詞、內在意圖與 OOC。不替玩家新增台詞、感受、承諾或下一個選擇。宣告是嘗試，不保證成功。
 單一 system 內的 current_snapshot 是目前資料；其後 user/assistant 是依序發生的歷史，history_index 列版本、地點及 witnesses，只有當時在場者感知。最後一則 user 才是本次輸入，直接回答，不重演舊動作、問句或段落。NPC 不自動知道玩家背景、內心及其他人的秘密。
-人物的 name 是內部身份；name_known:false 代表玩家尚未得知名字。敘事先用 public_name 或可見外貌稱呼，只有在對話中清楚介紹名字後才可改用姓名。背景人群可成為新人物，但要先寫出他們在當前地點的可見位置和走近過程，鄰近地點的人不可隔空回答。
+人物的 name 是內部身份；name_known:false 代表玩家尚未得知名字。敘事先用 public_name 或可見外貌稱呼，只有在對話中清楚介紹名字後才可改用姓名，不能聲稱玩家替他起了名字。背景人群可成為新人物，但要先寫出他們在當前地點的可見位置和走近過程，鄰近地點的人不可隔空回答。current_snapshot.default_interlocutor 是最近實際互動且仍在場的人；玩家對話未指明對象時由此人回答，明確另指人物時依玩家指定。
 state_provenance 標示欄位實際更新版本，較舊不代表自動失效。初始景物、評價或等待狀態與較新經歷衝突時，依已接受的因果接續整理。bookkeeping incomplete/partial 的故事已發生，只補必要資料，不重做行動。
 本網站保存原文與狀態，不要求玩家手動登記或操作檔案才肯回應。narration 給完整自然故事，一至三個短段落；不寫內部清單、檢查理由、技術錯誤或玩家下一步選項。
 先列 player_power_uses，每項 {ability_id,manifested}，僅記玩家實際嘗試的超自然能力；未登記 ID 留空，普通動作、工具、假設及提問用 []。manifested 表示任何實際超自然作用，不是是否達成目的；局部熱度、精神壓力、讀取意圖、感知力量或被抵抗的干擾都算 true。沒有回合前來源就完全零作用，不能本輪覺醒或自授能力補造來源。純內在企圖不被 NPC 感知。
 changes 只列實際變化，無變化 {}。可用 pc/npcs/locations/abilities/canon/world/contract/item_catalog、facts_add、open_matters。人物及地點用 ID；新個體先有具體基礎再行為並一起保存。保留人格、情緒與關係的因果，不用好感分數。移動、外顯狀況、裝備改變時同步位置、場景與資料；普通裝備記 equipment_notes/inventory。沒改的欄位不重抄。
-逐步建立：scene_people 只是在場人物索引，沿用 ID；只有 npcs 的人物載入了詳細資料。酒館等人群先用 locations 的 crowd（簡短背景字串）呈現，不替每名路人寫完整傳記。實際交談才在 changes.npcs 建立穩定個體，detail_level:incidental，具體身分、活動、態度、所知資訊及一項牽掛即可；名字未知可用穩定的外觀稱呼。持續交往才補充為 developed，不能倒造舊行為原因或新能力。群體提問只描寫合理的少數反應者，不逐人模擬。scene_focus 列本輪實際互動的人物 ID；同處酒館不等於聽到所有私語。重要承諾與共同經歷可寫人物 memory_note:{text,evidence}，evidence 摘錄本輪敘事，不編造未發生回憶。
-先在 establish.people 建立本輪首次個別接觸的人（背景人群用 []），每人 {id,name,species,role,description,activity,stance,concern,knowledge:[]}，沿用 ID，不重建已存在者。這是先 Establish 再 Portray，同一次生成完成，不要只在長篇 narration 介紹新人物卻不保存紀錄。
+逐步建立：scene_people 只是在場人物索引，沿用 ID；只有 npcs 的人物載入了詳細資料。酒館等人群先用 locations 的 crowd（簡短背景字串）呈現，不替每名路人寫完整傳記。實際交談才在 changes.npcs 建立穩定個體，detail_level:incidental，具體身分、活動、態度、所知資訊及一項牽掛即可；名字未知可用穩定的外觀稱呼。持續交往才補充為 developed，不能倒造舊行為原因或新能力。群體提問只描寫合理的少數反應者，不逐人模擬。scene_focus 按本輪實際互動先後列人物 ID，最近交談者放最後；同處酒館不等於聽到所有私語。重要承諾與共同經歷可寫人物 memory_note:{text,evidence}，evidence 摘錄本輪敘事，不編造未發生回憶。
+先在 establish.people 建立本輪首次個別接觸的人（背景人群用 []），每人 {id,name,species,role,description,activity,stance,concern,knowledge:[],entry_from}，沿用 ID，不重建已存在者。entry_from 是當前地點或相鄰地點 ID；narration 本身須先寫清此人的可見位置，或從相鄰地點走近玩家的動作，再讓他開口。只提及遠處人物不能令他憑空到場。這是先 Establish 再 Portray，同一次生成完成，不要只在長篇 narration 介紹新人物卻不保存紀錄。
 新人物只寫 establish.people，不在 changes.npcs 重抄；changes.npcs 只更新舊人物。人物每欄一句短句，敘事約一百二十至二百五十字；不重抄未變欄位。
 只回傳 {"player_power_uses":[],"establish":{"people":[]},"narration":"完整故事或 OOC 回覆","changes":{}}。'''
 
@@ -53,10 +53,10 @@ changes 只列實際變化，無變化 {}。可用 pc/npcs/locations/abilities/c
 # RPG OS source excerpts remain verbatim; no extra model call or story summary.
 COMPACT_SYSTEM='''依 RPG OS v1.01 Understand→Establish→Resolve→Portray 主持；程式只存檔及核對玩家超自然能力來源。只寫繁體中文自然敘事，名稱中文（English）。完整回答最後 user，保留短句、粵語、否定、OOC、內在意圖與真正台詞的區別；不替玩家添加台詞、感受、行動或選擇。宣告是嘗試，不保證成功。
 current_snapshot 是目前資料，其後 user/assistant 為依序發生的歷史；history_index 的地點與 witnesses 限制感知。state_provenance 的版本只表示欄位更新時間，舊值不自動失效；已接受的較新事件優先，不重演歷史。bookkeeping 不完整仍已發生。NPC 只知自己感知的事，不讀玩家內心。
-name_known:false 的人物姓名屬內部資料，未介紹前只用 public_name 或外貌稱呼。背景人群不是已認識人物；新人加入對話須先從當前場景可見地出現或走近。
+name_known:false 的人物姓名屬內部資料，未介紹前只用 public_name 或外貌稱呼，不替玩家起名。default_interlocutor 是最近互動且仍在場的人；未指明對象的對話由此人回答。背景人群不是已認識人物；新人加入對話須先從當前場景可見地出現或走近。
 player_power_uses 僅列玩家實際嘗試的超自然能力 {ability_id,manifested}；普通動作、工具、假設、提問用 []。沿用 player_ability_record，無既定來源就零作用，不能本輪覺醒、自授或倒造來源；局部作用、感知、精神壓力或被抵抗也算 manifested:true。未登記 ID 留空。
 依人物人格、情緒、關係、所知與代價作自主反應，保留因果、數量、身分、能力、地理、死亡及已發生後果。narration 約一百二十至二百五十字完整故事或 OOC 回覆，不寫技術清單、內部 ID、選項，不要求玩家操作檔案。
-changes 只列實際變化，無則 {}；沿用人物與地點 ID，移動、裝備、外顯狀況同步保存。scene_people 是未載入詳情的在場索引，nearby_characters 在鄰處；不可重建、搬人或使遠處人物回應。人群先用地點 crowd 背景；首次個別互動只在 establish.people 建立一至三名 {id,name,species,role,description,activity,stance,concern,knowledge:[]}，每欄短句。原人物更新 changes.npcs；持續交往才 developed。scene_focus 列本輪互動 ID，同處不等於聽到私語。
+changes 只列實際變化，無則 {}；沿用人物與地點 ID，移動、裝備、外顯狀況同步保存。scene_people 是未載入詳情的在場索引，nearby_characters 在鄰處；不可重建、搬人或使遠處人物回應。人群先用地點 crowd 背景；首次個別互動只在 establish.people 建立一至三名 {id,name,species,role,description,activity,stance,concern,knowledge:[],entry_from}，每欄短句。entry_from 是當前或相鄰地點 ID；narration 須先寫此人的位置或走近過程，再讓他開口。原人物更新 changes.npcs；持續交往才 developed。scene_focus 按互動先後列 ID，最近交談者最後，同處不等於聽到私語。
 重要共同經歷可寫人物 memory_note:{text,evidence}；evidence 摘錄本輪敘事，inner_life.memories 是陣列，不能改寫舊事。
 只回傳 {"player_power_uses":[],"establish":{"people":[]},"narration":"完整自然回覆","changes":{}}；未變欄位不重抄，資料整理不得混入 narration。'''
 
@@ -114,8 +114,9 @@ SCHEMA={'type':'object','properties':{
 
 NEW_PERSON={'type':'object','properties':{
     **{key:{'type':'string','minLength':1,'maxLength':160} for key in ('id','name','species','role','description','activity','stance','concern')},
+    'entry_from':{'type':'string'},
     'knowledge':{'type':'array','maxItems':4,'items':{'type':'string','maxLength':160}}},
-    'required':['id','name','species','role','description','activity','stance','concern','knowledge'],'additionalProperties':False}
+    'required':['id','name','species','role','description','activity','stance','concern','knowledge','entry_from'],'additionalProperties':False}
 from .world_schema import BILINGUAL_NAME
 NEW_PERSON['properties']['name']=dict(BILINGUAL_NAME)
 SCHEMA['properties']={key:value for key,value in [
@@ -136,10 +137,54 @@ def reply_schema(state):
     people['additionalProperties']=False
     schema['properties']['establish']['properties']['people']['items']['properties']['id']={
         'type':'string','enum':new_ids}
+    here=state['pc']['location']
+    schema['properties']['establish']['properties']['people']['items']['properties']['entry_from']={
+        'type':'string','enum':[here,*state['locations'][here]['exits']]}
     identity=state.get('canon',{}).get('actors',{}).get(state['pc']['id'],{})
     ids=list(dict.fromkeys([*state['pc'].get('spells',[]),*identity.get('powers',[]),'']))
     schema['properties']['player_power_uses']['items']['properties']['ability_id']={'type':'string','enum':ids}
     return schema
+
+
+class EntryContinuityError(RuleError):
+    """A new character cannot be saved at the player's location by implication."""
+
+
+def _entry_evidence_is_physical(state, person, narration):
+    if not isinstance(narration,str):
+        return False
+    # Dialogue may report a movement that the player has not witnessed. Only
+    # the visible narration outside speech can place a new actor in the scene.
+    visible=re.sub(r'「[^」]*」','',narration)
+    from .names import chinese
+    from .npc_visibility import appearance_label
+    role=person['role']
+    role_terms={role[i:i+2] for i in range(len(role)-1)}
+    identifiers=[person['name'],chinese(person['name']),role,
+                 appearance_label(person['description']),
+                 *sorted((word for word in role_terms if re.fullmatch(r'[\u3400-\u9fff]{2}',word)),reverse=True)]
+    mentions=[match.start() for term in identifiers if term for match in re.finditer(re.escape(term),visible)]
+    if not mentions:return False
+    here=state['pc']['location'];origin=person.get('entry_from')
+    if origin not in {here,*state['locations'][here]['exits']}:
+        return False
+    for position in sorted(set(mentions)):
+        clause=re.split(r'[。！？\n]',visible[position:position+140],maxsplit=1)[0]
+        if origin!=here:
+            if re.search(r'走|跑|趕|進|穿|靠近|抵達',clause) and re.search(
+                    r'來|到|近|進|你面前|你身旁|眼前|門前|身後',clause):
+                return True
+            continue
+        remote_origin=False
+        for other in state['locations'][here]['exits']:
+            place=chinese(state['locations'][other]['name'])
+            if place in clause or (len(place)>=2 and place[-2:] in clause):
+                remote_origin=True
+        if remote_origin:continue
+        if (re.search(r'在|從|由|於|站|坐|靠|走|跑|擠|轉|抬',clause) and
+            re.search(r'人群|附近|門|屋|街|桌|窗|店|攤|牆|廣場|路|橋|海|岸|巷|樹|碼頭|身旁|旁邊|面前|角落',clause)):
+            return True
+    return False
 
 
 def establish_details(state,result):
@@ -149,13 +194,22 @@ def establish_details(state,result):
     changes=result['changes'];npcs=changes.setdefault('npcs',{})
     if not isinstance(npcs,dict):return result
     people=foundation.get('people',[]);established=set()
-    for person in people[:3] if isinstance(people,list) else []:
-        if not isinstance(person,dict) or set(person)!=set(NEW_PERSON['properties']):continue
-        if any(not isinstance(person[key],str) or not person[key].strip() for key in set(person)-{'knowledge'}):continue
+    if not isinstance(people,list) or len(people)>3:
+        raise EntryContinuityError('新人物資料不完整，故事未執行。')
+    for person in people:
+        if not isinstance(person,dict) or set(person)!=set(NEW_PERSON['properties']):
+            raise EntryContinuityError('新人物缺少到場來源，故事未執行。')
+        if any(not isinstance(person[key],str) or not person[key].strip() for key in set(person)-{'knowledge'}):
+            raise EntryContinuityError('新人物資料不完整，故事未執行。')
         key=person['id']
-        if key in state['npcs'] or key==state['pc']['id'] or not isinstance(person['knowledge'],list):continue
+        if key in state['npcs'] or key==state['pc']['id']:continue
+        if not isinstance(person['knowledge'],list):
+            raise EntryContinuityError('新人物資料不完整，故事未執行。')
         if any(person['name'].casefold()==npc['name'].casefold() for npc in state['npcs'].values()):continue
-        if any(not isinstance(value,str) for value in person['knowledge']):continue
+        if any(not isinstance(value,str) for value in person['knowledge']):
+            raise EntryContinuityError('新人物資料不完整，故事未執行。')
+        if not _entry_evidence_is_physical(state,person,result.get('narration','')):
+            raise EntryContinuityError('新人物未有可見的在場位置或走近過程，故事未執行。')
         from .npc_visibility import appearance_label
         from .names import chinese
         base={field:person[field] for field in ('name','species','role','description','knowledge')}
@@ -268,6 +322,15 @@ def reply(state,text,base_url,recent=None,state_provenance=None):
     from .scene_memory import project,recall
     context.update(project(state,original))
     context.pop('scene_memory',None)
+    from .conversation_target import conversation_target,explicit_people
+    if len(explicit_people(state,original))<=1:
+        target=conversation_target(state,original)
+        if target and target in context['npcs']:
+            npc=state['npcs'][target]
+            from .npc_visibility import public_name
+            context['default_interlocutor']={
+                'id':target,'public_name':public_name(npc),
+                'rule':'只在本次是未指明對象的對話時使用；明確指向另一人則以玩家指定為準。'}
     working_people(context['npcs'],original)
     from .references import referenced_characters
     context['referenced_characters']=referenced_characters(state,{'text':original})
@@ -363,7 +426,16 @@ def reply(state,text,base_url,recent=None,state_provenance=None):
             raise RuleError('本機模型的上下文空間仍不足，這次行動尚未執行，故事已保留。可縮短輸入或增加模型的上下文容量後重試。')
     with stage('RPG OS 主持與敘事'):
         raw=_complete(messages,base_url,output_max,.45,response_schema=reply_schema(state),raw=True)
-    result=establish_details(state,decode_reply(raw))
+    try:
+        result=establish_details(state,decode_reply(raw))
+    except EntryContinuityError as exc:
+        corrected_messages=copy.deepcopy(messages)
+        corrected_messages[0]['content']+='\n\n新人物到場連續性修正：'+str(exc)+''' 上次草稿沒有被保存。
+如本輪不需要新人物，由原本在場的人回答，establish.people 用 []。如確需新人物，先在 narration 正文寫清楚此人從當前人群何處出現，或從相鄰地點走到玩家所在地；entry_from 填實際起點 ID。不能只在 activity 或人物對白中交代位置，不要讓被遠處提及的人突然代答。完整回答玩家原句。'''
+        with stage('修正新人物到場連續性'):
+            raw=_complete(corrected_messages,base_url,output_max,.35,
+                          response_schema=reply_schema(state),raw=True)
+        result=establish_details(state,decode_reply(raw))
     from .ability_sources import inspect_reply
     issues,checked=inspect_reply(state,result)
     if not issues:

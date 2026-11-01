@@ -172,7 +172,7 @@ class CoreCompletionTrialTests(unittest.TestCase):
                 self.fail('A remote unknown must not be sent to the model as NPC knowledge'))
             reply=gm(engine.state(),text,'http://none')
             self.assertIn('唔清楚',reply['narration'])
-            self.assertEqual(reply['changes'],{})
+            self.assertEqual(reply['changes'],{'scene_focus':['anya']})
             self.assertEqual(engine.state()['revision'],0)
 
     def test_material_tier_changes_damage_but_not_unknown_contents(self):

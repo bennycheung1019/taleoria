@@ -40,10 +40,11 @@ def project(state,text,full_limit=4,index_limit=24):
     explicit={key for key,npc in local.items() if mentions(npc,text,registry)}
     memory=state.get('scene_memory',{})
     focus=memory.get('focus',{}).get(here,[]) if isinstance(memory,dict) else []
+    interlocutor=memory.get('interlocutor',{}).get(here) if isinstance(memory,dict) else None
     contacts=memory.get('contacts',{}) if isinstance(memory,dict) else {}
     def rank(key):
         npc=local[key]
-        return (key in explicit,score(npc.get('description',''),query),key in focus,
+        return (key in explicit,key==interlocutor,score(npc.get('description',''),query),key in focus,
                 contacts.get(key,0),npc.get('detail_level')!='incidental')
     ordered=sorted(local,key=rank,reverse=True)
     selected=set(ordered[:full_limit])|explicit
@@ -76,7 +77,14 @@ def remember(state,after,changes,narration,revision):
     keys=list(dict.fromkeys(key for key in keys if isinstance(key,str) and key in after['npcs'] and after['npcs'][key]['location']==here))
     memory=copy.deepcopy(state.get('scene_memory',{'version':1,'focus':{},'contacts':{}}))
     memory.setdefault('focus',{});memory.setdefault('contacts',{})
+    memory.setdefault('interlocutor',{})
     if keys:memory['focus'][here]=keys[:4]
     for key in keys:memory['contacts'][key]=revision
+    focused=[key for key in explicit if key in after['npcs'] and
+             after['npcs'][key]['location']==here]
+    if focused:
+        memory['interlocutor'][here]=focused[-1]
+    elif len(keys)==1 and '「' in narration and '」' in narration:
+        memory['interlocutor'][here]=keys[0]
     after['scene_memory']=memory
     return keys

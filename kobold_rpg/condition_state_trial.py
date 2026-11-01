@@ -8,6 +8,7 @@ from .calibrated_difficulty_trial import (compile_calibrated_action,
     propose_force_profile,register_force_profile,resolve_profiled_force)
 from .calibrated_gm_trial import host_force_narration,focused_dialogue
 from .context_budget import budget,count
+from .conversation_target import conversation_target,explicit_people,present_people
 from .dynamic_pending_trial import _dice,_row,_save_once
 from .engine import RuleError,require_text
 from .gm_context import recent_context,recalled_object_context
@@ -57,6 +58,9 @@ def _mentions_npc_name(name,text):
 
 def _information_question(text):
     if _addressed_solo_conversation(text):
+        return True
+    if re.search(r'\b(?:i\s+)?(?:ask|asked)\b.{0,80}\b(?:why|what|who|where|when|how)\b',
+                 text,re.I):
         return True
     if ('？' in text or '?' in text) and not re.search(
             r'請|可否|能否|願意|幫我|放我|給我',text):
@@ -402,20 +406,16 @@ def make_condition_gm(engine,complete=None,observations=None):
             return complete(messages,url,maximum,temperature,**kwargs)
         if _information_question(original):
             here=state['pc']['location']
-            present=[key for key,npc in state['npcs'].items() if
-                     npc.get('known') and npc.get('location')==here]
-            people=[key for key,npc in state['npcs'].items() if
-                    npc.get('known') and npc.get('location')==here and
-                    npc.get('name') and _mentions_npc_name(npc['name'],original)]
+            present=list(present_people(state))
+            people=explicit_people(state,original)
             if len(people)>1:raise RuleError('問題涉及多名人物，請講明目標。')
-            if not people and _addressed_person_pronoun(original):
-                if len(present)>1:
+            if not people:
+                target=conversation_target(state,original)
+                if target:people=[target]
+                elif len(present)>1 and (_addressed_person_pronoun(original) or
+                                          _addressed_solo_conversation(original) or
+                                          re.search(r'\bask(?:ed)?\b',original,re.I)):
                     raise RuleError('附近有多名人物，請講明你想問邊位；故事未執行。')
-                people=present
-            if not people and _addressed_solo_conversation(original):
-                if len(present)>1:
-                    raise RuleError('附近有多名人物，請講明你想問邊位；故事未執行。')
-                people=present
             local_object_mentioned=any(item.get('location')==here and
                 item.get('name') and (item['name'] in original or
                 chinese(item['name']) in original)
@@ -443,10 +443,11 @@ def make_condition_gm(engine,complete=None,observations=None):
                 if mentioned_remote and not local_named and not any(
                         any(chinese(item['name']) in str(fact) for item in mentioned_remote)
                         for fact in person.get('knowledge',[])):
-                    prose=f'{chinese(person["name"])}說：「我唔清楚你講嗰件遠處物件嘅情況。」'
+                    from .npc_visibility import public_name
+                    prose=f'{public_name(person)}說：「我唔清楚你講嗰件遠處物件嘅情況。」'
                     observations.append({'route':'knowledge_guard',
                                          'narration_source':'host','calls':calls})
-                    return {'narration':prose,'changes':{},'bookkeeping':'ready'}
+                    return {'narration':prose,'changes':{'scene_focus':people},'bookkeeping':'ready'}
                 local_objects=[item for item in state.get('world',{}).get('entities',{}).values()
                     if item.get('location')==here and item.get('name') and
                     (item['name'] in original or chinese(item['name']) in original)]
@@ -465,10 +466,11 @@ def make_condition_gm(engine,complete=None,observations=None):
                             any(term in str(fact) for term in unknown_terms)
                             for fact in known_facts):
                         factual=item.get('condition_sentence','')
-                        prose=f'{factual}{chinese(person["name"])}說：「我唔清楚當中未知嘅情況。」'
+                        from .npc_visibility import public_name
+                        prose=f'{factual}{public_name(person)}說：「我唔清楚當中未知嘅情況。」'
                         observations.append({'route':'knowledge_guard',
                                              'narration_source':'host','calls':calls})
-                        return {'narration':prose,'changes':{},'bookkeeping':'ready'}
+                        return {'narration':prose,'changes':{'scene_focus':people},'bookkeeping':'ready'}
                 recent_rows,_=recent_context(engine,state)
                 older=recalled_object_context(engine,state,original,
                     [row['revision'] for row in recent_rows])
@@ -476,7 +478,7 @@ def make_condition_gm(engine,complete=None,observations=None):
                                          base_url,measured,older_object_events=older)
                 observations.append({'route':'focused_dialogue','narration_source':'ai',
                                      'older_object_events':len(older),'calls':calls})
-                return {'narration':prose,'changes':{},'bookkeeping':'ready'}
+                return {'narration':prose,'changes':{'scene_focus':people},'bookkeeping':'ready'}
         frozen=prepare_condition_decision(engine,request_hash,state['revision'],
                                           original,base_url,measured)
         decision=frozen['decision']

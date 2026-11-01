@@ -73,11 +73,11 @@ class PreproductionRouterTests(unittest.TestCase):
                 before,'ask him why am i here','http://none')
             self.assertEqual(len(calls),1)
             self.assertIn('ask 小禾',calls[0][0]['content'])
-            self.assertEqual(reply['changes'],{})
+            self.assertEqual(reply['changes'],{'scene_focus':['guide']})
             self.assertEqual(engine.state(),before)
             named=make_condition_gm(engine,complete=complete)(
                 before,'ask Xiao He why am i here','http://none')
-            self.assertEqual(named['changes'],{})
+            self.assertEqual(named['changes'],{'scene_focus':['guide']})
             self.assertEqual(len(calls),2)
 
     def test_pronoun_with_two_present_people_requests_clarification(self):
