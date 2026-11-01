@@ -38,6 +38,14 @@ def _addressed_person_pronoun(text):
                 re.search(r'問\s*(?:佢|他|她|嗰個人|那個人)',text))
 
 
+def _addressed_solo_conversation(text):
+    """A direct request for a person's explanation, even without punctuation."""
+    return bool(re.search(r'\b(?:can|could|would)\s+you\s+(?:tell|explain|describe)\b|'
+                          r'\btell\s+me\s+(?:more|about|what|why|how|where|who)\b',text,re.I)
+                or re.search(r'你(?:可唔可以|可不可以|可以|能否|能不能).{0,8}(?:講|說|話我知|告訴我)|'
+                             r'(?:講|話|告訴).{0,5}(?:我|本人).{0,6}(?:呢度|這裡|呢個地方)',text))
+
+
 def _mentions_npc_name(name,text):
     if name in text or chinese(name) in text:return True
     pair=PAIR.fullmatch(name.strip())
@@ -46,6 +54,8 @@ def _mentions_npc_name(name,text):
 
 
 def _information_question(text):
+    if _addressed_solo_conversation(text):
+        return True
     if ('？' in text or '?' in text) and not re.search(
             r'請|可否|能否|願意|幫我|放我|給我',text):
         return True
@@ -397,6 +407,10 @@ def make_condition_gm(engine,complete=None,observations=None):
                     npc.get('name') and _mentions_npc_name(npc['name'],original)]
             if len(people)>1:raise RuleError('問題涉及多名人物，請講明目標。')
             if not people and _addressed_person_pronoun(original):
+                if len(present)>1:
+                    raise RuleError('附近有多名人物，請講明你想問邊位；故事未執行。')
+                people=present
+            if not people and _addressed_solo_conversation(original):
                 if len(present)>1:
                     raise RuleError('附近有多名人物，請講明你想問邊位；故事未執行。')
                 people=present

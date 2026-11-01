@@ -1,3 +1,4 @@
+import copy
 import http.client
 import json
 import tempfile
@@ -12,11 +13,39 @@ from kobold_rpg.condition_state_trial import (apply_condition_result,
     make_condition_gm,narrate_condition,prepare_condition_decision)
 from kobold_rpg.engine import Engine,RuleError
 from test_dynamic_values_trial import object_fixture
+from test_library import fixture as world_fixture
 from test_structured_state_trial import action
 from server import make_handler
 
 
 class ConditionStateTrialTests(unittest.TestCase):
+    def test_unpunctuated_question_follows_only_present_speaker(self):
+        with tempfile.TemporaryDirectory() as folder:
+            engine=Engine(Path(folder)/'world.sqlite3',seed=world_fixture()['seed'])
+            observations=[]
+            gm=make_condition_gm(engine,observations=observations)
+            with (patch('kobold_rpg.condition_state_trial.focused_dialogue',
+                        return_value=('小禾說：「這裡是河邊的小店。」',120)) as dialogue,
+                  patch('kobold_rpg.condition_state_trial.prepare_condition_decision',
+                        side_effect=AssertionError('must not create a new NPC'))):
+                reply=gm(engine.state(),'can you tell me more about this place','http://none')
+            self.assertEqual(observations[-1]['route'],'focused_dialogue')
+            self.assertEqual(dialogue.call_args.args[2],'guide')
+            engine.record_gm_reply('can you tell me more about this place',reply,'solo-question',0)
+            self.assertEqual(set(engine.state()['npcs']),{'guide'})
+            self.assertTrue(engine.verify())
+
+    def test_unnamed_question_with_two_present_people_requests_a_target(self):
+        with tempfile.TemporaryDirectory() as folder:
+            engine=Engine(Path(folder)/'world.sqlite3',seed=world_fixture()['seed'])
+            state=engine.state();other=copy.deepcopy(state['npcs']['guide'])
+            other.update(id='neighbor',name='鄰居（Neighbor）')
+            state['npcs']['neighbor']=other
+            gm=make_condition_gm(engine)
+            with self.assertRaisesRegex(RuleError,'請講明你想問邊位'):
+                gm(state,'can you tell me more about this place','http://none')
+            self.assertEqual(engine.state()['revision'],0)
+
     def test_injected_http_turn_commits_numeric_condition_once(self):
         seed=register_force_profile(object_fixture(),'side_door','reinforced',
             'breached',False,'厚木板和鐵箍','表面完整未有破口')
