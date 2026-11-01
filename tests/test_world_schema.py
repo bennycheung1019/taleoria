@@ -47,6 +47,20 @@ class WorldSchemaTests(unittest.TestCase):
         self.assertNotIn('audit',result)
         self.assertNotIn('story',result['seed'])
 
+    def test_generated_known_acquaintance_can_be_named_in_opening(self):
+        candidate=fixture();plan=candidate['plan']
+        plan['player']['background']='阿晴在河邊住了十年，一直認識店主小禾。'
+        plan['npc']['known_to_player']=True
+        plan['npc']['relationship_to_player']='阿晴與小禾相識多年，經常互相照看藥草。'
+        plan['opening']='小禾在門內整理藥草，抬頭向老朋友說：「今日有新貨。」'
+        with patch('kobold_rpg.worldgen._complete',return_value=plan) as complete:
+            result=generate_world(candidate['preferences'],'http://local')
+        self.assertEqual(complete.call_count,1)
+        schema=complete.call_args.kwargs['response_schema']['properties']['npc']
+        self.assertIn('known_to_player',schema['required'])
+        self.assertEqual(schema['properties']['known_to_player']['type'],'boolean')
+        self.assertTrue(result['seed']['npcs']['guide']['name_known'])
+
     def test_new_world_uses_familiar_entry_without_copying_prior_prose(self):
         candidate=fixture()
         prior=[{'title':'舊戰役','background':'灰霧籠罩礦區',

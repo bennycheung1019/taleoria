@@ -24,13 +24,13 @@ WORLD_SYSTEM = '''你是 RPG OS v1.01 的世界建立者。依玩家偏好，用
 NPC 有具體性格、牽掛、顧慮與界線，能溫暖也能堅持，依自身資訊與經歷改變。情緒不等於愛情或服從。
 主角起始能力應符合玩家偏好。普通能力放 skills，超自然能力才放 powers（最多兩項），寫出範圍與限制；沒有則 []。
 不寫未定義的變身、隱藏血統、詛咒、魔法物品或療效。物品是普通具體物件（最多四項）。
-開場約兩段，只使用已建立地點與人物，讓 NPC 有自然的互動契機，不替主角發言、感受、行動或接受任務，也不在開場施放能力。第一幕先處理一件無須知道世界歷史也能理解的普通小事；不立即拋出謎樣神器、詛咒、神秘包裹或陌生勢力。後續可隨玩家探索展開奇幻或危險。開場以外貌或衣著稱呼未介紹的 NPC，不透露她的姓名；交談後才可認識。起點描述讓玩家看見附近有少量未逐一介紹的人，日後有人加入對話須交代其位置和走近的過程。
+開場約兩段，只使用已建立地點與人物，讓 NPC 有自然的互動契機，不替主角發言、感受、行動或接受任務，也不在開場施放能力。第一幕先處理一件無須知道世界歷史也能理解的普通小事；不立即拋出謎樣神器、詛咒、神秘包裹或陌生勢力。後續可隨玩家探索展開奇幻或危險。若主角背景已明確建立與起始 NPC 的相識經歷及姓名，known_to_player=true，relationship_to_player 簡述真實共同過去，開場可以自然使用其姓名；否則 known_to_player=false，relationship_to_player 寫「初次見面」，開場只用外貌或衣著稱呼，交談後才可認識。不能臨時聲稱玩家替陌生人起名。起點描述讓玩家看見附近有少量未逐一介紹的人，日後有人加入對話須交代其位置和走近的過程。
 把玩家當成第一次接觸這個世界的人。從熟悉的生活場所、清楚的身分和一件眼前小事開始；題材的危險或奇妙之處可以逐步出現。開場不要堆砌世界歷史、勢力、術語或謎語。NPC 首句說日常可理解的話，不要假設玩家已知道專有名詞；如必須提及新名詞，同句用白話解釋。世界背景亦先說明人們如何生活及眼前發生甚麼事。
 只回傳一個 JSON，不使用 Markdown。必須使用以下完整格式（不要加入其他欄位）：
 {"title":"戰役名稱","background":"約一至兩段的世界背景及眼前局勢","rules":["本世界三至五項具體規則，與 RPG OS 不衝突"],
 "player":{"name":"姓名","species":"種族","role":"身分職業","background":"角色背景","goal":"願望而非保證結局","skills":["普通技能"],"powers":[{"name":"能力名","effect":"具體效果","limits":"範圍與不能做到甚麼"}],"items":[{"name":"物品名","description":"普通物件的具體用途"}]},
 "location":{"name":"起點名稱","description":"地形、可見景物、光線、出入口及 NPC 位置","nearby":[{"name":"可步行到達的附近地點","description":"具體景物，不新增人物或魔法"}]},
-"npc":{"name":"姓名","species":"種族","role":"身分","description":"成年人物的可見外貌與活動","personality":"性格與情感傾向","values":"具體牽掛","concern":"當下顧慮","boundary":"界線","levers":"可打動的具體條件","condition":"身心狀況與活動","priorities":"優先事項與限制","appraisal":"察覺及評價或資訊限制","attraction":"當前吸引或明確尚未建立，不用分數","stance":"參與態度"},
+"npc":{"name":"姓名","species":"種族","role":"身分","description":"成年人物的可見外貌與活動","personality":"性格與情感傾向","values":"具體牽掛","concern":"當下顧慮","boundary":"界線","levers":"可打動的具體條件","condition":"身心狀況與活動","priorities":"優先事項與限制","appraisal":"察覺及評價或資訊限制","attraction":"當前吸引或明確尚未建立，不用分數","stance":"參與態度","known_to_player":false,"relationship_to_player":"初次見面；若已相識，寫主角與此 NPC 的具體共同經歷"},
 "opening":"兩段繁體中文開場，停在玩家的下一個選擇之前"}
 '''
 
@@ -163,6 +163,10 @@ def normalize_plan(raw):
         player = plan['player']
         if 'goal' not in player and 'wishes' in player:
             player['goal'] = player.pop('wishes')
+    if isinstance(plan,dict) and isinstance(plan.get('npc'),dict):
+        # Plans produced before familiarity was explicit remain first meetings.
+        plan['npc'].setdefault('known_to_player',False)
+        plan['npc'].setdefault('relationship_to_player','初次見面')
     return plan
 
 
@@ -181,15 +185,23 @@ def build_world(plan, prefs):
     player, npc, location = plan['player'], plan['npc'], plan['location']
     pkeys = {'name', 'species', 'role', 'background', 'goal', 'skills', 'powers', 'items'}
     nkeys = {'name', 'species', 'role', 'description', 'personality', 'values', 'concern', 'boundary', 'levers',
-             'condition', 'priorities', 'appraisal', 'attraction', 'stance'}
+             'condition', 'priorities', 'appraisal', 'attraction', 'stance','known_to_player','relationship_to_player'}
     if not isinstance(player, dict) or set(player) != pkeys or not isinstance(npc, dict) or set(npc) != nkeys:
         raise RuleError('角色草案缺少身分、能力或 NPC 個人基礎。')
     if not isinstance(location, dict) or set(location) - {'name', 'description', 'nearby','objects'} or not {'name', 'description'} <= set(location):
         raise RuleError('需要完整的起點資料。')
     for key in pkeys - {'skills', 'powers', 'items'}:
         _text(player[key], '主角' + key)
-    for key in nkeys:
+    for key in nkeys - {'known_to_player','relationship_to_player'}:
         _text(npc[key], '人物' + key)
+    if type(npc['known_to_player']) is not bool:
+        raise RuleError('起始人物是否已認識需要明確設定。')
+    relationship=_text(npc['relationship_to_player'],'起始人物關係',200)
+    if npc['known_to_player'] and (relationship=='初次見面' or
+                                   chinese(npc['name']) not in relationship or
+                                   (chinese(npc['name']) not in player['background'] and
+                                    chinese(npc['name']) not in prefs['player_background'])):
+        raise RuleError('開局已認識的人物需要有包含姓名的既定共同經歷。')
     for key in ('name', 'description'):
         _text(location[key], '起點' + key)
     nearby = location.get('nearby', [])
@@ -256,13 +268,16 @@ def build_world(plan, prefs):
     from .npc_visibility import appearance_label
     state['npcs'] = {'guide': {'id': 'guide', 'name': npc['name'],
         'public_name': appearance_label(npc['description'].replace(npc['name'], '').replace(chinese(npc['name']), '')),
-        'name_known': False, 'location': 'start', 'known': True,
+        'name_known': npc['known_to_player'], 'location': 'start', 'known': True,
         'alive': True, 'description': npc['description'],
         'anchor': {k: npc[k] for k in ('values', 'concern', 'boundary', 'levers')},
         'encounter': {k: npc[k] for k in ('condition', 'priorities', 'appraisal', 'attraction', 'stance')},
-        'knowledge': ['自己的身分與當前活動'], 'conditions': [],
+        'knowledge': ['自己的身分與當前活動', *([relationship] if npc['known_to_player'] else [])], 'conditions': [],
         'inner_life': {'personality': {'description': npc['personality'], 'basis': source, 'established_revision': 0},
-                       'limits': [], 'current_emotions': [], 'relationships': {}, 'memories': [], 'personality_history': []}}}
+                       'limits': [], 'current_emotions': [],
+                       'relationships': ({state['pc']['id']:{'history':relationship,'source':source}}
+                                         if npc['known_to_player'] else {}),
+                       'memories': [], 'personality_history': []}}}
     state['canon'] = {'version': 1, 'actors': {}, 'powers': {}, 'flags': {}, 'uses': []}
     for actor_id, person in ((state['pc']['id'], player), ('guide', npc)):
         establish(state, {'kind': 'identity', 'actor': actor_id, 'species': person['species'], 'role': person['role'],
@@ -289,7 +304,8 @@ def build_world(plan, prefs):
     state['item_catalog'] = {f'item_{i+1}': {**copy.deepcopy(item), 'source': source}
                              for i, item in enumerate(player['items'])}
     state['media'] = {'scenes': {}, 'portraits': {}, 'items': {}}
-    state['facts'] = []
+    state['facts'] = ([{'text':relationship,'visibility':'public','source':source}]
+                      if npc['known_to_player'] else [])
     return state
 
 
@@ -337,7 +353,7 @@ def generate_plan(raw, model_url, scene_trial=False, prior_worlds=None):
     # producing valid JSON. Repair only opening prose, never grant new facts.
     if isinstance(plan, dict) and isinstance(plan.get('player'), dict) and isinstance(plan.get('opening'), str):
         try:
-            validate_opening(plan, hide_npc_name=True)
+            validate_opening(plan, hide_npc_name=not plan['npc']['known_to_player'])
         except (RuleError, KeyError, TypeError):
             try:
                 with stage('整理開場'):
@@ -348,12 +364,12 @@ def generate_plan(raw, model_url, scene_trial=False, prior_worlds=None):
                 if not isinstance(replacement, dict) or set(replacement) != {'opening'}:
                     raise RuleError('開場重寫未完成。')
                 plan['opening'] = replacement['opening']
-                validate_opening(plan, hide_npc_name=True)
+                validate_opening(plan, hide_npc_name=not plan['npc']['known_to_player'])
             except (RuleError, KeyError, TypeError):
                 # These two AI-authored descriptions were established before
                 # play; reuse them rather than invent a PC action or new cause.
                 plan['opening'] = str(plan.get('location', {}).get('description', '')) + '\n\n' + str(plan.get('npc', {}).get('description', ''))
-                validate_opening(plan, hide_npc_name=True)
+                validate_opening(plan, hide_npc_name=not plan['npc']['known_to_player'])
     # Explicit name preference is an authoring constraint, not optional model prose.
     if prefs['player_name']:
         requested=prefs['player_name'];pair=PAIR.fullmatch(plan['player']['name'].strip())

@@ -9,10 +9,39 @@ from kobold_rpg.engine import Engine
 from kobold_rpg.gm import EntryContinuityError,establish_details,reply as gm_reply
 from kobold_rpg.library import CampaignLibrary
 from kobold_rpg.npc_visibility import hide_name
+from kobold_rpg.worldgen import build_world
 from test_library import fixture
 
 
 class NPCVisibilityTests(unittest.TestCase):
+    def test_preexisting_acquaintance_knows_name_and_has_card_at_opening(self):
+        candidate=fixture();plan=candidate['plan']
+        plan['player']['background']='阿晴在河邊住了十年，與小禾是多年朋友。'
+        plan['npc']['known_to_player']=True
+        plan['npc']['relationship_to_player']='阿晴與小禾在河邊相識多年，常互相照看藥草。'
+        plan['opening']='小禾在門內整理藥草，向老朋友揮手說：「今日有新鮮藥草。」'
+        candidate['seed']=build_world(plan,candidate['preferences'])
+        with tempfile.TemporaryDirectory() as folder:
+            original=Engine(Path(folder)/'original.sqlite3',seed=candidate['seed'])
+            library=CampaignLibrary(Path(folder)/'library',original)
+            preview=library.preview(candidate)
+            self.assertIn('小禾',preview['plan']['opening'])
+            library.create(preview['preview_id'])
+            state=library.engine.state()
+            self.assertTrue(state['npcs']['guide']['name_known'])
+            self.assertEqual(library.engine.public_state()['people']['guide']['name'],'小禾（Xiao He）')
+            self.assertIn('小禾',library.engine.history()[0]['narration'])
+            self.assertIn('小禾',state['facts'][0]['text'])
+            self.assertTrue(library.engine.verify())
+
+    def test_prior_acquaintance_requires_named_shared_history(self):
+        candidate=fixture();candidate['plan']['npc']['known_to_player']=True
+        with self.assertRaisesRegex(ValueError,'既定共同經歷'):
+            build_world(candidate['plan'],candidate['preferences'])
+        candidate['plan']['npc']['relationship_to_player']='阿晴與小禾相識多年。'
+        candidate['preferences']['player_background']='阿晴一直認識小禾。'
+        self.assertTrue(build_world(candidate['plan'],candidate['preferences'])['npcs']['guide']['name_known'])
+
     def test_hidden_name_does_not_invent_player_given_nickname(self):
         npc={'name':'阿海（Ah Hai）','name_known':False,
              'public_name':'一名年輕漁民','description':'一名年輕漁民走近。'}

@@ -19,7 +19,8 @@ WORLD_SCHEMA=obj({
         'skills':texts(),'powers':rows({key:text() for key in ('name','effect','limits')}),
         'items':rows({key:text() for key in ('name','description')})}),
     'location':obj({'name':text(),'description':text(),'nearby':rows({'name':text(),'description':text()})}),
-    'npc':obj({key:text() for key in ('name','species','role','description','personality','values','concern','boundary','levers','condition','priorities','appraisal','attraction','stance')}),
+    'npc':obj({**{key:text() for key in ('name','species','role','description','personality','values','concern','boundary','levers','condition','priorities','appraisal','attraction','stance')},
+               'known_to_player':{'type':'boolean'},'relationship_to_player':text()}),
     'opening':text(),
 })
 # Keep authoring sizes consistent with build_world, rather than letting the
