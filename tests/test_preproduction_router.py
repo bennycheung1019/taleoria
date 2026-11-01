@@ -111,6 +111,51 @@ class PreproductionRouterTests(unittest.TestCase):
             self.assertEqual(len(calls),1)
             self.assertEqual(engine.state()['revision'],0)
 
+    def test_walking_up_to_person_falls_back_only_when_trial_has_no_outcome(self):
+        text='i walk up to her , "1 person"'
+        seed=world_fixture()['seed'];seen=[]
+        def complete(messages,*args,**kwargs):
+            return {'mode':'play','steps':[action('move','guide',utterance='1 person')]}
+        def fallback(state,original,*args,**kwargs):
+            seen.append(original)
+            return {'narration':'那位店主抬頭望向走近的你。','changes':{'scene_focus':['guide']}}
+        with tempfile.TemporaryDirectory() as folder:
+            engine=Engine(Path(folder)/'copy.sqlite3',seed=seed)
+            class Library:pass
+            library=Library();library.engine=engine
+            gm=make_preproduction_gm(
+                library,trial_factory=lambda current:make_condition_gm(current,complete=complete),
+                fallback=fallback)
+            reply=gm(engine.state(),text,'http://none')
+            self.assertEqual(seen,[text])
+            self.assertEqual(reply['changes'],{'scene_focus':['guide']})
+            self.assertEqual(engine.state()['revision'],0)
+            with engine.connect() as db:
+                frozen=db.execute('select decision from dynamic_trial_pending').fetchone()[0]
+            self.assertIn('needs_judgment',frozen)
+            engine.record_gm_reply(text,reply,'approach',0)
+            self.assertEqual(engine.state()['pc']['location'],'start')
+            self.assertTrue(engine.verify())
+
+    def test_unresolved_trial_with_roll_keeps_error_instead_of_fallback(self):
+        seed=world_fixture()['seed']
+        with tempfile.TemporaryDirectory() as folder:
+            engine=Engine(Path(folder)/'copy.sqlite3',seed=seed)
+            class Library:pass
+            library=Library();library.engine=engine
+            gm=make_preproduction_gm(library,
+                trial_factory=lambda current:make_condition_gm(current),
+                fallback=lambda *a,**k:self.fail('must not fall back after roll'))
+            frozen={'decision':{'status':'needs_judgment','changes':{},
+                                'rolls':[{'total':1}],
+                                'steps':[{'action':'force','status':'unresolved'}]},
+                    'intent':{'mode':'play','steps':[action('force','door')]}}
+            from unittest.mock import patch
+            with patch('kobold_rpg.condition_state_trial.prepare_condition_decision',return_value=frozen):
+                with self.assertRaisesRegex(RuleError,'行動未有安全裁定'):
+                    gm(engine.state(),'break door','http://none')
+            self.assertEqual(engine.state()['revision'],0)
+
 
 if __name__ == '__main__':
     unittest.main()

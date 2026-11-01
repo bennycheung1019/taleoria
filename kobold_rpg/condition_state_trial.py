@@ -34,6 +34,10 @@ class UnsupportedSocialInteraction(RuleError):
     """A new-world NPC has no registered numeric social contract yet."""
 
 
+class UnadjudicatedTrialAction(RuleError):
+    """No outcome, roll, or world change exists; the RPG OS may handle it."""
+
+
 def _addressed_person_pronoun(text):
     return bool(re.search(r'\bask\s+(?:him|her|them)\b',text,re.I) or
                 re.search(r'問\s*(?:佢|他|她|嗰個人|那個人)',text))
@@ -482,7 +486,12 @@ def make_condition_gm(engine,complete=None,observations=None):
         frozen=prepare_condition_decision(engine,request_hash,state['revision'],
                                           original,base_url,measured)
         decision=frozen['decision']
-        if decision['status']!='resolved':raise RuleError('行動未有安全裁定。')
+        if decision['status']!='resolved':
+            if (decision.get('changes')=={} and not decision.get('rolls') and
+                decision.get('steps') and all(step.get('status')=='unresolved'
+                                              for step in decision['steps'])):
+                raise UnadjudicatedTrialAction('試驗流程未能裁定這次行動。')
+            raise RuleError('行動未有安全裁定。')
         if frozen['intent']['steps'][0]['action']=='persuade':
             prose=render_social(state,original,decision['social_result'])
             observations.append({'route':'social_contract','narration_source':'host',

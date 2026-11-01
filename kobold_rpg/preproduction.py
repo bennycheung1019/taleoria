@@ -1,6 +1,7 @@
 """Local pre-production router for the experimental action workflow."""
 
-from .condition_state_trial import make_condition_gm, UnsupportedSocialInteraction
+from .condition_state_trial import (make_condition_gm,UnsupportedSocialInteraction,
+                                    UnadjudicatedTrialAction)
 from .engine import RuleError
 from .gm import reply as legacy_reply
 
@@ -23,7 +24,7 @@ def make_preproduction_gm(library, *, trial_factory=make_condition_gm,
                 state, text, base_url, recent=recent,
                 state_provenance=state_provenance)
         except RuleError as exc:
-            if not isinstance(exc,UnsupportedSocialInteraction) and str(exc) not in UNSUPPORTED:
+            if not isinstance(exc,(UnsupportedSocialInteraction,UnadjudicatedTrialAction)) and str(exc) not in UNSUPPORTED:
                 raise
         return fallback(state, text, base_url, recent=recent,
                         state_provenance=state_provenance)
