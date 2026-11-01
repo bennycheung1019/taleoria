@@ -47,6 +47,28 @@ class WorldSchemaTests(unittest.TestCase):
         self.assertNotIn('audit',result)
         self.assertNotIn('story',result['seed'])
 
+    def test_opening_cut_at_old_limit_is_rewritten_before_creation(self):
+        candidate=fixture();plan=copy.deepcopy(candidate['plan'])
+        plan['opening']='河水聲。'+'他'*236
+        self.assertEqual(len(plan['opening']),240)
+        with patch('kobold_rpg.worldgen._complete',side_effect=[
+                plan,{'opening':candidate['plan']['opening']}]) as complete:
+            result=generate_world(candidate['preferences'],'http://local')
+        self.assertEqual(complete.call_count,2)
+        self.assertGreater(complete.call_args_list[0].kwargs['response_schema']
+                           ['properties']['opening']['maxLength'],240)
+        self.assertEqual(result['plan']['opening'],candidate['plan']['opening'])
+
+    def test_incomplete_rewrite_uses_only_established_descriptions(self):
+        candidate=fixture();plan=copy.deepcopy(candidate['plan'])
+        plan['opening']='未完的開場'
+        with patch('kobold_rpg.worldgen._complete',side_effect=[
+                plan,{'opening':'仍然未完'}]) as complete:
+            result=generate_world(candidate['preferences'],'http://local')
+        self.assertEqual(complete.call_count,2)
+        self.assertEqual(result['plan']['opening'],
+                         plan['location']['description']+'\n\n'+plan['npc']['description'])
+
     def test_english_player_preference_is_preserved_with_a_chinese_alias(self):
         candidate=fixture();plan=copy.deepcopy(candidate['plan']);plan['player']['name']='班尼（Benny）'
         prefs={**candidate['preferences'],'player_name':'Benny'}

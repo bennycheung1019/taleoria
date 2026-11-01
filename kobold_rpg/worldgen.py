@@ -40,6 +40,8 @@ def _text(value, label, maximum=4000):
 
 def validate_opening(plan):
     opening = _text(plan['opening'], '開場', 6000)
+    if not re.search(r'[。！？!?…][」』”’）)]?\s*\Z', opening):
+        raise RuleError('開場最後一句未寫完，需要重新生成。')
     prose = re.sub(r'[（(][^）)]*[）)]', '', opening)
     for person in (plan.get('player', {}), plan.get('npc', {})):
         if isinstance(person, dict) and isinstance(person.get('name'), str):
@@ -217,9 +219,9 @@ def generate_plan(raw, model_url, scene_trial=False):
     bound(schema)
     schema['properties']['title']['maxLength']=60
     schema['properties']['background']['maxLength']=240
-    schema['properties']['opening']['maxLength']=240
+    schema['properties']['opening']['maxLength']=400
     schema['properties']['location']['properties']['nearby']['maxItems']=1
-    instruction=WORLD_SYSTEM+'\n這是快速開局。世界背景與開場各約八十字，其他欄位各用一個短句（約十五至三十字），只建立起點與最多一個附近地點。普通人物不必有秘密或任務。不預寫後續場景、對白與遠處人物。保留玩家明確要求；細節可在實際接觸時再建立。'
+    instruction=WORLD_SYSTEM+'\n這是快速開局。世界背景與開場各約八十字，開場必須在完整句子的句號、問號或驚嘆號結束；其他欄位各用一個短句（約十五至三十字），只建立起點與最多一個附近地點。普通人物不必有秘密或任務。不預寫後續場景、對白與遠處人物。保留玩家明確要求；細節可在實際接觸時再建立。'
     requested=prefs['player_name']
     if requested:
         pair=PAIR.fullmatch(requested)
@@ -246,7 +248,7 @@ def generate_plan(raw, model_url, scene_trial=False):
             try:
                 with stage('整理開場'):
                   replacement = _complete([
-                    {'role': 'system', 'content': '只回傳 JSON：{"opening":"兩段自然繁體中文開場"}。只描寫給定景物與 NPC 日常活動和一句直接台詞。不可寫主角的動作、台詞、感受、承諾或決定。不可新增人物、能力、物品或事件。不要使用英文句子。避免以「你」作主詞，用景物或 NPC 作主詞。'},
+                    {'role': 'system', 'content': '只回傳 JSON：{"opening":"兩段自然繁體中文開場"}。請重新寫完整兩段，每段一至兩句，最後一句必須以句號、問號或驚嘆號完成。只描寫給定景物與 NPC 日常活動和一句直接台詞。不可寫主角的動作、台詞、感受、承諾或決定。不可新增人物、能力、物品或事件。不要使用英文句子。避免以「你」作主詞，用景物或 NPC 作主詞。'},
                     {'role': 'user', 'content': json.dumps({'location': plan.get('location'), 'npc': plan.get('npc')}, ensure_ascii=False)}
                 ], model_url, 500, 0.3,response_schema=obj({'opening':text()}))
                 if not isinstance(replacement, dict) or set(replacement) != {'opening'}:
