@@ -6,7 +6,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from kobold_rpg.engine import Engine
-from kobold_rpg.gm import EntryContinuityError,establish_details,reply as gm_reply
+from kobold_rpg.gm import EntryContinuityError,_ground_local_entry,establish_details,reply as gm_reply
 from kobold_rpg.library import CampaignLibrary
 from kobold_rpg.npc_visibility import hide_name
 from kobold_rpg.worldgen import build_world
@@ -131,6 +131,55 @@ class NPCVisibilityTests(unittest.TestCase):
         approached=copy.deepcopy(draft)
         approached['narration']='年輕漁民阿海喘著粗氣，快步走到你面前，才開口回答。'
         self.assertEqual(establish_details(state,approached)['changes']['npcs']['npc_1_1']['location'],'start')
+
+    def test_visible_location_before_new_person_is_valid_evidence(self):
+        state=fixture()['seed']
+        person={'id':'npc_1_1','name':'阿海（Ah Hai）','species':'人類','role':'年輕漁民',
+                'description':'一名年輕漁民，穿著灰色短襖。','activity':'從桌旁起身',
+                'stance':'願意交談','concern':'漁獲','knowledge':[],
+                'entry_from':'start'}
+        for prose in ('長桌旁，一名年輕漁民站起身，走向你。',
+                      '長桌旁，Ah Hai 站起身，走向你。'):
+            with self.subTest(prose=prose):
+                prepared=establish_details(state,{'establish':{'people':[person]},
+                    'narration':prose,'changes':{}})
+                self.assertEqual(prepared['changes']['npcs']['npc_1_1']['location'],'start')
+        with self.assertRaises(EntryContinuityError):
+            establish_details(state,{'establish':{'people':[person]},
+                'narration':'老者說：「長桌旁，一名年輕漁民站起身。」','changes':{}})
+
+    def test_after_failed_retry_local_crowd_arrival_can_be_made_visible(self):
+        state=fixture()['seed']
+        person={'id':'npc_1_1','name':'阿海（Ah Hai）','species':'人類','role':'年輕漁民',
+                'description':'一名年輕漁民，穿著灰色短襖。','activity':'從人群走來',
+                'stance':'願意交談','concern':'漁獲','knowledge':[],
+                'entry_from':'start'}
+        draft={'player_power_uses':[],'establish':{'people':[person]},
+               'narration':'一名年輕漁民看著你，準備回答。','changes':{}}
+        with self.assertRaises(EntryContinuityError):establish_details(state,draft)
+        with tempfile.TemporaryDirectory() as folder:
+            engine=Engine(Path(folder)/'copy.sqlite3',seed=state)
+            with (patch('kobold_rpg.model._complete',return_value=draft) as model,
+                  patch('kobold_rpg.context_budget.budget',return_value=None)):
+                result=gm_reply(engine.state(),'我向旁邊的居民打招呼','http://none')
+            self.assertEqual(model.call_count,2)
+            self.assertTrue(result['narration'].startswith('在'))
+            self.assertIn('人群中',result['narration'])
+            self.assertEqual(engine.state()['revision'],0)
+            engine.record_gm_reply('我向旁邊的居民打招呼',result,'grounded',0)
+            self.assertTrue(engine.verify())
+
+    def test_local_bridge_never_moves_a_remote_or_only_quoted_person(self):
+        state=fixture()['seed']
+        person={'id':'npc_1_1','name':'阿海（Ah Hai）','species':'人類','role':'年輕漁民',
+                'description':'一名年輕漁民，穿著灰色短襖。','activity':'從市場走來',
+                'stance':'願意交談','concern':'漁獲','knowledge':[],
+                'entry_from':'near_1'}
+        draft={'establish':{'people':[person]},'narration':'年輕漁民回答你。','changes':{}}
+        self.assertEqual(_ground_local_entry(state,draft),draft)
+        person['entry_from']='start'
+        draft['narration']='老者說：「年輕漁民走近你。」'
+        self.assertEqual(_ground_local_entry(state,draft),draft)
 
     def test_gm_retries_unwitnessed_person_before_any_story_is_saved(self):
         state=fixture()['seed']

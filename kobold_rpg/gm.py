@@ -156,20 +156,23 @@ def _entry_evidence_is_physical(state, person, narration):
     # Dialogue may report a movement that the player has not witnessed. Only
     # the visible narration outside speech can place a new actor in the scene.
     visible=re.sub(r'「[^」]*」','',narration)
-    from .names import chinese
+    from .names import PAIR,chinese
     from .npc_visibility import appearance_label
     role=person['role']
     role_terms={role[i:i+2] for i in range(len(role)-1)}
+    paired=PAIR.fullmatch(person['name'].strip())
     identifiers=[person['name'],chinese(person['name']),role,
                  appearance_label(person['description']),
+                 paired[2] if paired else '',
                  *sorted((word for word in role_terms if re.fullmatch(r'[\u3400-\u9fff]{2}',word)),reverse=True)]
-    mentions=[match.start() for term in identifiers if term for match in re.finditer(re.escape(term),visible)]
-    if not mentions:return False
     here=state['pc']['location'];origin=person.get('entry_from')
     if origin not in {here,*state['locations'][here]['exits']}:
         return False
-    for position in sorted(set(mentions)):
-        clause=re.split(r'[。！？\n]',visible[position:position+140],maxsplit=1)[0]
+    # The physical location often comes before the person's description:
+    # "長桌旁，一名青年站起來". Check that whole visible sentence rather than
+    # the text following the name; quoted dialogue remains excluded above.
+    for clause in re.split(r'[。！？\n]',visible):
+        if not any(term and term in clause for term in identifiers):continue
         if origin!=here:
             if re.search(r'走|跑|趕|進|穿|靠近|抵達',clause) and re.search(
                     r'來|到|近|進|你面前|你身旁|眼前|門前|身後',clause):
@@ -185,6 +188,39 @@ def _entry_evidence_is_physical(state, person, narration):
             re.search(r'人群|附近|門|屋|街|桌|窗|店|攤|牆|廣場|路|橋|海|岸|巷|樹|碼頭|身旁|旁邊|面前|角落',clause)):
             return True
     return False
+
+
+def _ground_local_entry(state, draft):
+    """Make an already portrayed crowd member's local arrival visible.
+
+    Only a current-scene crowd can supply this bridge. A person at a neighboring
+    location still needs the GM to describe their actual journey.
+    """
+    result=copy.deepcopy(draft)
+    foundation=result.get('establish',{})
+    people=foundation.get('people',[]) if isinstance(foundation,dict) else []
+    narration=result.get('narration','')
+    if not isinstance(people,list) or not isinstance(narration,str):return result
+    here=state['pc']['location'];place=state['locations'][here]
+    if not place.get('crowd'):return result
+    from .names import PAIR,chinese
+    from .npc_visibility import appearance_label
+    visible=re.sub(r'「[^」]*」','',narration)
+    leads=[]
+    for person in people:
+        if (not isinstance(person,dict) or person.get('entry_from')!=here or
+                not all(isinstance(person.get(k),str) for k in ('name','role','description')) or
+                _entry_evidence_is_physical(state,person,narration)):
+            continue
+        pair=PAIR.fullmatch(person['name'].strip())
+        label=appearance_label(person['description'].replace(person['name'],'').replace(chinese(person['name']),''))
+        terms=[person['name'],chinese(person['name']),person['role'],label,pair[2] if pair else '']
+        if not any(term and term in visible for term in terms):continue
+        # A remote person merely being discussed is not a local crowd member.
+        if any(chinese(state['locations'][other]['name']) in visible for other in place['exits']):continue
+        leads.append(f'在{chinese(place["name"])}附近的人群中，{label}走到你面前。')
+    if leads:result['narration']=''.join(leads)+narration
+    return result
 
 
 def establish_details(state,result):
@@ -435,7 +471,10 @@ def reply(state,text,base_url,recent=None,state_provenance=None):
         with stage('修正新人物到場連續性'):
             raw=_complete(corrected_messages,base_url,output_max,.35,
                           response_schema=reply_schema(state),raw=True)
-        result=establish_details(state,decode_reply(raw))
+        retry_draft=decode_reply(raw)
+        try:result=establish_details(state,retry_draft)
+        except EntryContinuityError:
+            result=establish_details(state,_ground_local_entry(state,retry_draft))
     from .narrative_quality import repeated_passage
     if repeated_passage(result.get('narration'),past):
         retry=copy.deepcopy(messages)
