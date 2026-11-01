@@ -39,6 +39,7 @@ def rules_packet():
 SYSTEM='''依前述 RPG OS v1.01 原文執行 Understand → Establish → Resolve → Portray。你主持與裁定，程式只核對玩家超自然能力的既定來源；沒有普通行動或敘事批准者。
 只用繁體中文自然敘事，名稱用中文（English Name）。保留玩家原意、粵語、短句、否定及連續行動；分清真正說出口的台詞、內在意圖與 OOC。不替玩家新增台詞、感受、承諾或下一個選擇。宣告是嘗試，不保證成功。
 單一 system 內的 current_snapshot 是目前資料；其後 user/assistant 是依序發生的歷史，history_index 列版本、地點及 witnesses，只有當時在場者感知。最後一則 user 才是本次輸入，直接回答，不重演舊動作、問句或段落。NPC 不自動知道玩家背景、內心及其他人的秘密。
+人物的 name 是內部身份；name_known:false 代表玩家尚未得知名字。敘事先用 public_name 或可見外貌稱呼，只有在對話中清楚介紹名字後才可改用姓名。背景人群可成為新人物，但要先寫出他們在當前地點的可見位置和走近過程，鄰近地點的人不可隔空回答。
 state_provenance 標示欄位實際更新版本，較舊不代表自動失效。初始景物、評價或等待狀態與較新經歷衝突時，依已接受的因果接續整理。bookkeeping incomplete/partial 的故事已發生，只補必要資料，不重做行動。
 本網站保存原文與狀態，不要求玩家手動登記或操作檔案才肯回應。narration 給完整自然故事，一至三個短段落；不寫內部清單、檢查理由、技術錯誤或玩家下一步選項。
 先列 player_power_uses，每項 {ability_id,manifested}，僅記玩家實際嘗試的超自然能力；未登記 ID 留空，普通動作、工具、假設及提問用 []。manifested 表示任何實際超自然作用，不是是否達成目的；局部熱度、精神壓力、讀取意圖、感知力量或被抵抗的干擾都算 true。沒有回合前來源就完全零作用，不能本輪覺醒或自授能力補造來源。純內在企圖不被 NPC 感知。
@@ -52,6 +53,7 @@ changes 只列實際變化，無變化 {}。可用 pc/npcs/locations/abilities/c
 # RPG OS source excerpts remain verbatim; no extra model call or story summary.
 COMPACT_SYSTEM='''依 RPG OS v1.01 Understand→Establish→Resolve→Portray 主持；程式只存檔及核對玩家超自然能力來源。只寫繁體中文自然敘事，名稱中文（English）。完整回答最後 user，保留短句、粵語、否定、OOC、內在意圖與真正台詞的區別；不替玩家添加台詞、感受、行動或選擇。宣告是嘗試，不保證成功。
 current_snapshot 是目前資料，其後 user/assistant 為依序發生的歷史；history_index 的地點與 witnesses 限制感知。state_provenance 的版本只表示欄位更新時間，舊值不自動失效；已接受的較新事件優先，不重演歷史。bookkeeping 不完整仍已發生。NPC 只知自己感知的事，不讀玩家內心。
+name_known:false 的人物姓名屬內部資料，未介紹前只用 public_name 或外貌稱呼。背景人群不是已認識人物；新人加入對話須先從當前場景可見地出現或走近。
 player_power_uses 僅列玩家實際嘗試的超自然能力 {ability_id,manifested}；普通動作、工具、假設、提問用 []。沿用 player_ability_record，無既定來源就零作用，不能本輪覺醒、自授或倒造來源；局部作用、感知、精神壓力或被抵抗也算 manifested:true。未登記 ID 留空。
 依人物人格、情緒、關係、所知與代價作自主反應，保留因果、數量、身分、能力、地理、死亡及已發生後果。narration 約一百二十至二百五十字完整故事或 OOC 回覆，不寫技術清單、內部 ID、選項，不要求玩家操作檔案。
 changes 只列實際變化，無則 {}；沿用人物與地點 ID，移動、裝備、外顯狀況同步保存。scene_people 是未載入詳情的在場索引，nearby_characters 在鄰處；不可重建、搬人或使遠處人物回應。人群先用地點 crowd 背景；首次個別互動只在 establish.people 建立一至三名 {id,name,species,role,description,activity,stance,concern,knowledge:[]}，每欄短句。原人物更新 changes.npcs；持續交往才 developed。scene_focus 列本輪互動 ID，同處不等於聽到私語。
@@ -79,7 +81,7 @@ NPC_PATCH={'type':'object','properties':{
     'detail_level':{'type':'string','enum':['incidental','developed']},
     'memory_note':MEMORY_NOTE,
     **{key:{'type':'string'} for key in ('name','description','location','role','species','public_name','background','goal','equipment_notes')},
-    **{key:{'type':'boolean'} for key in ('known','alive')},
+    **{key:{'type':'boolean'} for key in ('known','alive','name_known')},
     'conditions':{'type':'array','items':{'type':'string'}},
     'knowledge':{'type':'array','items':{'type':'string'}},
     'anchor':{'type':'object','additionalProperties':{'type':'string'}},
@@ -154,11 +156,16 @@ def establish_details(state,result):
         if key in state['npcs'] or key==state['pc']['id'] or not isinstance(person['knowledge'],list):continue
         if any(person['name'].casefold()==npc['name'].casefold() for npc in state['npcs'].values()):continue
         if any(not isinstance(value,str) for value in person['knowledge']):continue
+        from .npc_visibility import appearance_label
+        from .names import chinese
         base={field:person[field] for field in ('name','species','role','description','knowledge')}
         base.update(location=state['pc']['location'],detail_level='incidental',known=True,alive=True,
+            name_known=False,public_name=appearance_label(person['description'].replace(person['name'], '').replace(chinese(person['name']), '')),
             anchor={'concern':person['concern']},encounter={'condition':person['activity'],'stance':person['stance']})
         patch=npcs.get(key,{})
-        if isinstance(patch,dict):npcs[key]=merge(base,patch);established.add(key)
+        if isinstance(patch,dict):
+            patch={field:value for field,value in patch.items() if field not in ('location','name_known','public_name')}
+            npcs[key]=merge(base,patch);established.add(key)
     # Allocated IDs also allow a newly learned name/condition to be recorded
     # after the dialogue; an unused slot is never itself a fictional person.
     changes['npcs']={key:value for key,value in npcs.items() if key in state['npcs'] or key in established}

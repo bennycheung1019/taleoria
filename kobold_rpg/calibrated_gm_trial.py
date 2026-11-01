@@ -73,7 +73,7 @@ def focused_dialogue(state,text,npc_id,recent,base_url,complete,
                                 text,count=1,flags=re.I)
     context={'place':state['locations'][here],
              'npc':{key:npc.get(key) for key in
-                    ('name','description','anchor','encounter','knowledge','conditions')},
+                    ('name','public_name','name_known','description','anchor','encounter','knowledge','conditions')},
              'focused_objects':objects,'current_established_facts':current_facts,
              'recent_complete_exchanges':history,
              'older_sourced_object_events':(older_object_events or [])[-2:],
@@ -90,6 +90,7 @@ def focused_dialogue(state,text,npc_id,recent,base_url,complete,
                  '如有 resolved_reference，玩家代詞只指該物件；按 interpreted_question 的意思答覆，'
                  '不要改成問主角或其他人。'
                  '不可代玩家說話、行動或決定；不可改門、位置、物品、能力或 NPC 承諾。'
+                 'name_known:false 時，name 是內部資料；先用 public_name 或外貌稱呼。若玩家問姓名，可自然回答「我叫...」，之後玩家才知道名字。'
                  '不知道就直接說不知道，唔好補故事事實；不要重複前一次 NPC 答覆。'
                  '只回 JSON narration，不要技術 ID。')
     messages=[{'role':'system','content':instruction+'\n'+

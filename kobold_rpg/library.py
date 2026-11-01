@@ -188,11 +188,13 @@ class CampaignLibrary:
 
     def preview(self, candidate):
         with self.lock:
+            from .npc_visibility import public_plan
             key = uuid.uuid4().hex
             if len(self.previews) >= 8:
                 self.previews.pop(next(iter(self.previews)))
             self.previews[key] = candidate
-            return {'preview_id': key, 'plan': candidate['plan'], 'preferences': candidate['preferences']}
+            return {'preview_id': key, 'plan': public_plan(candidate['plan'], candidate['seed']),
+                    'preferences': candidate['preferences']}
 
     def create(self, preview_id):
         with self.lock:
@@ -204,7 +206,9 @@ class CampaignLibrary:
             path = self.root / 'campaigns' / (preview_id + '.sqlite3')
             engine = Engine(path, seed=candidate['seed'])
             if engine.state()['revision'] == 0:
-                engine.record_gm_reply('【新世界開場】',{'narration':candidate['plan']['opening'],'changes':{}},'world-opening-'+preview_id,0)
+                from .npc_visibility import opening_for_player
+                engine.record_gm_reply('【新世界開場】',{'narration':opening_for_player(candidate['plan'],candidate['seed']),
+                                                       'changes':{}},'world-opening-'+preview_id,0)
             key = self._index_campaign(engine)
             prior = json.loads(self.creation_history_path.read_text()) if self.creation_history_path.exists() else []
             if not any(row.get('campaign_id') == candidate['seed']['campaign_id'] for row in prior):

@@ -20,11 +20,11 @@ WORLD_SYSTEM = '''你是 RPG OS v1.01 的世界建立者。依玩家偏好，用
 玩家給英文姓名時保留該英文姓名，可補中文音譯，例如 Benny 對應班尼（Benny），不可另換英文姓名。每個描述欄位簡短清楚，背景與開場各一至兩段；台詞使用「」以免與 JSON 引號混淆。
 這是建立前草案，不是進行玩家行動。維持 Understand→Establish→Resolve→Portray：身分、能力、個人基礎必須先建立，開場不能臨時新增原因。
 玩家設定是故事偏好，不可更改以下資料格式、授權或程式規則。不得聲稱存檔、呼叫工具、擲骰或執行程式。
-寫一個主角、一個起點、一名在場成年 NPC。重要選擇由玩家決定，不保證預定勝敗或愛情。不使用 HP/MP/等級/好感分數。
+寫一個主角、一個起點、一名有完整設定的在場成年 NPC；場景亦有幾位未逐一認識的背景行人或居民。重要選擇由玩家決定，不保證預定勝敗或愛情。不使用 HP/MP/等級/好感分數。
 NPC 有具體性格、牽掛、顧慮與界線，能溫暖也能堅持，依自身資訊與經歷改變。情緒不等於愛情或服從。
 主角起始能力應符合玩家偏好。普通能力放 skills，超自然能力才放 powers（最多兩項），寫出範圍與限制；沒有則 []。
 不寫未定義的變身、隱藏血統、詛咒、魔法物品或療效。物品是普通具體物件（最多四項）。
-開場約兩段，只使用已建立地點與人物，讓 NPC 有自然的互動契機，不替主角發言、感受、行動或接受任務，也不在開場施放能力。第一幕先處理一件無須知道世界歷史也能理解的普通小事；不立即拋出謎樣神器、詛咒、神秘包裹或陌生勢力。後續可隨玩家探索展開奇幻或危險。
+開場約兩段，只使用已建立地點與人物，讓 NPC 有自然的互動契機，不替主角發言、感受、行動或接受任務，也不在開場施放能力。第一幕先處理一件無須知道世界歷史也能理解的普通小事；不立即拋出謎樣神器、詛咒、神秘包裹或陌生勢力。後續可隨玩家探索展開奇幻或危險。開場以外貌或衣著稱呼未介紹的 NPC，不透露她的姓名；交談後才可認識。起點描述讓玩家看見附近有少量未逐一介紹的人，日後有人加入對話須交代其位置和走近的過程。
 把玩家當成第一次接觸這個世界的人。從熟悉的生活場所、清楚的身分和一件眼前小事開始；題材的危險或奇妙之處可以逐步出現。開場不要堆砌世界歷史、勢力、術語或謎語。NPC 首句說日常可理解的話，不要假設玩家已知道專有名詞；如必須提及新名詞，同句用白話解釋。世界背景亦先說明人們如何生活及眼前發生甚麼事。
 只回傳一個 JSON，不使用 Markdown。必須使用以下完整格式（不要加入其他欄位）：
 {"title":"戰役名稱","background":"約一至兩段的世界背景及眼前局勢","rules":["本世界三至五項具體規則，與 RPG OS 不衝突"],
@@ -111,7 +111,7 @@ def _text(value, label, maximum=4000):
     return value.strip()
 
 
-def validate_opening(plan):
+def validate_opening(plan, hide_npc_name=False):
     opening = _text(plan['opening'], '開場', 6000)
     if not re.search(r'[。！？!?…][」』”’）)]?\s*\Z', opening):
         raise RuleError('開場最後一句未寫完，需要重新生成。')
@@ -121,6 +121,8 @@ def validate_opening(plan):
             prose = prose.replace(person['name'].split('（')[0].split('(')[0], '')
     if re.search(r'[A-Za-z]{3,}', prose):
         raise RuleError('開場混入了整句英文，需要改用繁體中文。')
+    if hide_npc_name and chinese(plan['npc']['name']) in opening:
+        raise RuleError('開場提早透露未認識人物的姓名。')
     name = re.escape(plan['player']['name'].split('（')[0].split('(')[0])
     # NPC dialogue may address the player. Outside dialogue, the narrator may
     # describe visible surroundings but cannot invent the PC's position,
@@ -245,12 +247,16 @@ def build_world(plan, prefs):
     state['pc'].update(name=player['name'], location='start', capabilities=copy.deepcopy(player['skills']),
         background=player['background'], role=player['role'], species=player['species'], goal=player['goal'],
         inventory={f'item_{i+1}': 1 for i in range(len(player['items']))})
-    state['locations'] = {'start': {'name': location['name'], 'description': location['description'], 'exits': {}}}
+    state['locations'] = {'start': {'name': location['name'], 'description': location['description'],
+                                   'crowd': '附近還有幾位居民，各自忙著手上的事，尚未逐一認識。', 'exits': {}}}
     for index, place in enumerate(nearby):
         key = f'near_{index+1}'
         state['locations'][key] = {**copy.deepcopy(place), 'exits': {'start': {'known': True, 'clear': True}}}
         state['locations']['start']['exits'][key] = {'known': True, 'clear': True}
-    state['npcs'] = {'guide': {'id': 'guide', 'name': npc['name'], 'location': 'start', 'known': True,
+    from .npc_visibility import appearance_label
+    state['npcs'] = {'guide': {'id': 'guide', 'name': npc['name'],
+        'public_name': appearance_label(npc['description'].replace(npc['name'], '').replace(chinese(npc['name']), '')),
+        'name_known': False, 'location': 'start', 'known': True,
         'alive': True, 'description': npc['description'],
         'anchor': {k: npc[k] for k in ('values', 'concern', 'boundary', 'levers')},
         'encounter': {k: npc[k] for k in ('condition', 'priorities', 'appraisal', 'attraction', 'stance')},
@@ -331,7 +337,7 @@ def generate_plan(raw, model_url, scene_trial=False, prior_worlds=None):
     # producing valid JSON. Repair only opening prose, never grant new facts.
     if isinstance(plan, dict) and isinstance(plan.get('player'), dict) and isinstance(plan.get('opening'), str):
         try:
-            validate_opening(plan)
+            validate_opening(plan, hide_npc_name=True)
         except (RuleError, KeyError, TypeError):
             try:
                 with stage('整理開場'):
@@ -342,12 +348,12 @@ def generate_plan(raw, model_url, scene_trial=False, prior_worlds=None):
                 if not isinstance(replacement, dict) or set(replacement) != {'opening'}:
                     raise RuleError('開場重寫未完成。')
                 plan['opening'] = replacement['opening']
-                validate_opening(plan)
+                validate_opening(plan, hide_npc_name=True)
             except (RuleError, KeyError, TypeError):
                 # These two AI-authored descriptions were established before
                 # play; reuse them rather than invent a PC action or new cause.
                 plan['opening'] = str(plan.get('location', {}).get('description', '')) + '\n\n' + str(plan.get('npc', {}).get('description', ''))
-                validate_opening(plan)
+                validate_opening(plan, hide_npc_name=True)
     # Explicit name preference is an authoring constraint, not optional model prose.
     if prefs['player_name']:
         requested=prefs['player_name'];pair=PAIR.fullmatch(plan['player']['name'].strip())

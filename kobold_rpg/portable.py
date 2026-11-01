@@ -56,6 +56,8 @@ def validate_state(state):
             raise RuleError('存檔人物基礎不正確。')
         if any(not isinstance(npc[k],str) for k in ('id','name','description','location')) or any(not isinstance(npc[k],list) for k in ('knowledge','conditions')):
             raise RuleError('存檔人物描述格式不正確。')
+        if ('name_known' in npc and type(npc['name_known']) is not bool) or ('public_name' in npc and not isinstance(npc['public_name'],str)):
+            raise RuleError('人物姓名可見狀態不正確。')
     for fact in state['facts']:
         if not isinstance(fact,dict) or fact.get('visibility') not in {'public','private'} or not isinstance(fact.get('text'),str):
             raise RuleError('存檔的公開與私人資料不正確。')

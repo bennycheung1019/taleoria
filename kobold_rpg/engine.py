@@ -97,7 +97,6 @@ class Engine:
         from .gm import record_changes
         from .story_text import story_text
         original=require_text(text,'你的行動或台詞')
-        narration=require_text(story_text(reply.get('narration')),'主持人回覆',20000)
         with self.connect() as db:
             db.execute('BEGIN IMMEDIATE')
             prior=db.execute('SELECT body,after_state FROM journal WHERE request_id=?',(request_id,)).fetchone()
@@ -107,6 +106,9 @@ class Engine:
                 return {'status':body['status'],'narration':story_text(body['narration']),'revision':json.loads(prior['after_state'])['revision']}
             state=json.loads(db.execute('SELECT body FROM state WHERE id=1').fetchone()[0])
             if state['revision']!=revision:raise RuleError('故事在生成期間已更新，請重新載入目前進度。')
+            from .npc_visibility import reconcile_reply
+            reply=reconcile_reply(state,reply)
+            narration=require_text(story_text(reply.get('narration')),'主持人回覆',20000)
             try:after,bookkeeping=record_changes(state,reply.get('changes',{}),revision+1,narration)
             except Exception:
                 # Bookkeeping is not a delivery/fiction approval stage.
@@ -124,7 +126,8 @@ class Engine:
     def public_state(self, state=None, history=None):
         state = self.state() if state is None else copy.deepcopy(state)
         from .names import aliases, display
-        name_registry=aliases(state)
+        from .npc_visibility import mask_hidden, name_known
+        private_state=copy.deepcopy(state)
         history = self.history(include_encounters=True) if history is None else history
         people, visited = knowledge(state, history)
         atlas = map_view(state, history)
@@ -132,7 +135,7 @@ class Engine:
         state['atlas'] = atlas
         state['locations'][state['pc']['location']]['description']=scene_text(state)
         state['npcs'] = {key: npc for key,npc in state['npcs'].items()
-                         if npc['location']==state['pc']['location'] and npc['known']}
+                         if npc['location']==state['pc']['location'] and npc['known'] and name_known(npc)}
         known_places={node['id'] for node in atlas['nodes']}
         state['locations']={key: place for key,place in state['locations'].items() if key in known_places}
         for key,place in state['locations'].items():
@@ -164,7 +167,8 @@ class Engine:
                                      'powers': len(state['canon']['powers']),
                                      'policy': state['contract']['canon_policy']}
             state.pop('canon')  # Private nature/powers are GM authority, not automatic PC knowledge.
-        return display(state,name_registry)
+        state=mask_hidden(state,private_state)
+        return display(state,aliases(state))
 
     def _append(self, db, state, after, request_id, body):
         after["revision"] = state["revision"] + 1

@@ -41,9 +41,11 @@ def _addressed_person_pronoun(text):
 def _addressed_solo_conversation(text):
     """A direct request for a person's explanation, even without punctuation."""
     return bool(re.search(r'\b(?:can|could|would)\s+you\s+(?:tell|explain|describe)\b|'
-                          r'\btell\s+me\s+(?:more|about|what|why|how|where|who)\b',text,re.I)
+                          r'\btell\s+me\s+(?:more|about|what|why|how|where|who)\b|'
+                          r'\b(?:what(?:\x27s| is)|tell me)\s+your\s+name\b',text,re.I)
                 or re.search(r'你(?:可唔可以|可不可以|可以|能否|能不能).{0,8}(?:講|說|話我知|告訴我)|'
-                             r'(?:講|話|告訴).{0,5}(?:我|本人).{0,6}(?:呢度|這裡|呢個地方)',text))
+                             r'(?:講|話|告訴).{0,5}(?:我|本人).{0,6}(?:呢度|這裡|呢個地方)|'
+                             r'你(?:叫咩名|叫什麼名字|叫甚麼名字|叫咩|叫什麼)',text))
 
 
 def _mentions_npc_name(name,text):

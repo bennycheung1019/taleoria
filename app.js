@@ -64,8 +64,8 @@ if(atlas.nodes.length)mapDetail(atlas.nodes.some(n=>n.id===selectedMapId)?select
 
 function renderPeople(){
   const people=Object.values(state.people||{}),parent=$('peopleList');parent.replaceChildren();
-  $('peopleCount').textContent=people.length+' 位已遇見的人';
-  if(!people.length){add(parent,'p','empty-state','隨著冒險展開，你遇見的人會記錄在這裡。');return;}
+  $('peopleCount').textContent=people.length+' 位已認識的人';
+  if(!people.length){add(parent,'p','empty-state','在故事中認識人物的名字後，人物卡會出現在這裡。');return;}
   for(const person of people){
     const node=el('article','person-card'),heading=add(node,'div','person-heading','');
     const portrait=add(heading,'div','person-portrait',person.name.slice(0,1));portrait.dataset.mediaKind='portrait';portrait.dataset.mediaKey=person.id;

@@ -52,13 +52,15 @@ def make_handler(engine, model_url, token, library=None, gm=rpg_os_reply, save_c
 
     def frame(engine):
         state=engine.state();pc=state['pc'];place=state['locations'][pc['location']]
+        from kobold_rpg.npc_visibility import mask_hidden,name_known
         identity=state.get('canon',{}).get('actors',{}).get(pc['id'],{})
         result={'campaign_id':state['campaign_id'],'revision':state['revision'],
                 'session_id':library.session_id if library is not None else '',
                 'contract':state['contract'],'pc':{**{key:pc[key] for key in ('id','name','alive','location')},
                     'role':pc.get('role',identity.get('role','')),'species':pc.get('species',identity.get('species',''))},
                 'scene':{'name':place['name'],'description':scene_text(state)}}
-        return display(result,aliases(state))
+        visible={**state,'npcs':{key:npc for key,npc in state['npcs'].items() if name_known(npc)}}
+        return display(mask_hidden(result,state),aliases(visible))
 
     def turn(engine,revision):
         with engine.connect() as db:

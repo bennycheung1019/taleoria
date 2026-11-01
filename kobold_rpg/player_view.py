@@ -3,14 +3,17 @@ from .physical import scene_text
 
 
 def encounters(state):
+    from .npc_visibility import public_name
     here = state['pc']['location']
-    return [{'id': npc['id'], 'name': npc.get('public_name', npc['name']),
+    return [{'id': npc['id'], 'name': public_name(npc),
              'description': npc['description'], 'location': here,
              'place': state['locations'][here]['name']}
             for npc in state['npcs'].values() if npc['location'] == here and npc['known']]
 
 
 def knowledge(state, history):
+    from .npc_visibility import name_known
+    named={key for key,npc in state['npcs'].items() if name_known(npc)}
     people = {}
     visited = {state['pc']['location']}
     def first_impression(person):
@@ -18,11 +21,13 @@ def knowledge(state, history):
     for row in history:
         visited.update(row.get('_visited', []))
         for person in row.get('_encounters', []):
+            if person['id'] not in named:continue
             record = people.setdefault(person['id'], first_impression(person))
             record.update(last_seen=person['place'], last_seen_revision=row['revision'])
     for person in encounters(state):
+        if person['id'] not in named:continue
         record = people.setdefault(person['id'], first_impression(person))
-        record.update(last_seen=person['place'], last_seen_revision=state['revision'])
+        record.update(name=person['name'],last_seen=person['place'], last_seen_revision=state['revision'])
     return people, visited
 
 

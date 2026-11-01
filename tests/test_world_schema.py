@@ -96,6 +96,15 @@ class WorldSchemaTests(unittest.TestCase):
                            ['properties']['opening']['maxLength'],240)
         self.assertEqual(result['plan']['opening'],candidate['plan']['opening'])
 
+    def test_generated_opening_rewrites_early_npc_name(self):
+        candidate=fixture();plan=copy.deepcopy(candidate['plan'])
+        plan['opening']='小禾在店門說：「你好。」'
+        with patch('kobold_rpg.worldgen._complete',side_effect=[
+                plan,{'opening':candidate['plan']['opening']}]) as complete:
+            result=generate_world(candidate['preferences'],'http://local')
+        self.assertEqual(complete.call_count,2)
+        self.assertNotIn('小禾',result['plan']['opening'])
+
     def test_incomplete_rewrite_uses_only_established_descriptions(self):
         candidate=fixture();plan=copy.deepcopy(candidate['plan'])
         plan['opening']='未完的開場'

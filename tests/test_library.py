@@ -23,7 +23,7 @@ def fixture():
                     'personality': '溫和而務實', 'values': '維持小店', 'concern': '藥草受潮', 'boundary': '先問再碰物品',
                     'levers': '實際的協助', 'condition': '清醒，正在工作', 'priorities': '整理藥草', 'appraisal': '看見門外的旅人',
                     'attraction': '尚未建立吸引', 'stance': '可以簡短交談'},
-            'opening': '河水聲從店外傳來。小禾在門內整理藥草，抬頭說：「你好，需要幫忙嗎？」'}
+            'opening': '河水聲從店外傳來。店主在門內整理藥草，抬頭說：「你好，需要幫忙嗎？」'}
     seed = build_world(plan, prefs)
     return {'preferences': prefs, 'plan': plan, 'seed': seed}
 

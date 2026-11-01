@@ -2,12 +2,16 @@
 import re
 
 def scene_text(state):
-    text=state['locations'][state['pc']['location']]['description'];additions=[]
+    place=state['locations'][state['pc']['location']]
+    text=place['description'];additions=[]
+    if place.get('crowd') and place['crowd'] not in text:
+        additions.append(place['crowd'])
     for npc in state['npcs'].values():
         changed=npc.get('injuries') or re.search(r'警戒|防衛|交戰|持劍相向|正在攻擊',npc.get('encounter',{}).get('stance',''))
         if not changed:continue
         names=[part for part in re.split(r'[（()）]',npc['name']) if part]
         text=''.join(part for part in re.split(r'(?<=[。！？])|\n+',text) if not any(name in part for name in names))
         if npc['known'] and npc['location']==state['pc']['location']:
-            additions.append(npc['name']+'：'+(npc['injuries'][-1]['condition'] if npc.get('injuries') else npc['encounter']['stance']))
+            from .npc_visibility import public_name
+            additions.append(public_name(npc)+'：'+(npc['injuries'][-1]['condition'] if npc.get('injuries') else npc['encounter']['stance']))
     return '\n'.join([text.strip(),*additions]).strip() or '這裡是'+state['locations'][state['pc']['location']]['name']+'。'
