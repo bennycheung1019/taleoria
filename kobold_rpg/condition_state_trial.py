@@ -61,6 +61,17 @@ def _mentions_npc_name(name,text):
 
 
 def _information_question(text):
+    # A question spoken during an action is not a question-only turn. The
+    # dialogue shortcut cannot adjudicate physical consequences.
+    question=re.search(r'[？?]',text)
+    if question:
+        tail=text[question.end():]
+        tail=re.sub(r'^[\s"”」\'’、，,。.!！;；:：]+','',tail)
+        if tail:
+            return False
+    if (re.search(r'\b(?:and\s+then|and|then)\s+(?:i|we)\s+(?!ask\b|say\b|tell\b|speak\b|reply\b|answer\b)\w+',text,re.I)
+            or '然後' in text or '跟住' in text):
+        return False
     if _addressed_solo_conversation(text):
         return True
     if re.search(r'\b(?:i\s+)?(?:ask|asked)\b.{0,80}\b(?:why|what|who|where|when|how)\b',

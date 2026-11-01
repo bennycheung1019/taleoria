@@ -2,6 +2,7 @@ import copy
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from kobold_rpg.engine import RuleError
 from kobold_rpg.engine import Engine
@@ -136,6 +137,24 @@ class PreproductionRouterTests(unittest.TestCase):
             engine.record_gm_reply(text,reply,'approach',0)
             self.assertEqual(engine.state()['pc']['location'],'start')
             self.assertTrue(engine.verify())
+
+    def test_question_in_spoken_line_does_not_swallow_following_attack(self):
+        text='「痛苦？」, i use full power, and push my whole arm into her body, and go all the way up to her heart'
+        seed=world_fixture()['seed'];seen=[]
+        class Library:pass
+        with tempfile.TemporaryDirectory() as folder:
+            engine=Engine(Path(folder)/'copy.sqlite3',seed=seed)
+            library=Library();library.engine=engine
+            gm=make_preproduction_gm(library,
+                fallback=lambda state,original,*args,**kwargs:
+                    seen.append(original) or {'narration':'這次攻擊尚未裁定。','changes':{}})
+            from kobold_rpg.condition_state_trial import UnadjudicatedTrialAction
+            with patch('kobold_rpg.condition_state_trial.prepare_condition_decision',
+                       side_effect=UnadjudicatedTrialAction('未裁定')) as decision:
+                gm(engine.state(),text,'http://none')
+            decision.assert_called_once()
+            self.assertEqual(seen,[text])
+            self.assertEqual(engine.state()['revision'],0)
 
     def test_unresolved_trial_with_roll_keeps_error_instead_of_fallback(self):
         seed=world_fixture()['seed']

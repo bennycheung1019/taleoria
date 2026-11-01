@@ -3,6 +3,7 @@
 Construct with an Engine for a disposable save. It is deliberately not wired
 into the default server startup or live Taleoria configuration.
 """
+import copy
 import hashlib
 import json
 import re
@@ -104,6 +105,15 @@ def focused_dialogue(state,text,npc_id,recent,base_url,complete,
     prose=data.get('narration') if isinstance(data,dict) and set(data)=={'narration'} else None
     if not isinstance(prose,str) or not prose.strip() or len(prose)>1200:
         raise RuleError('人物對話格式不完整，故事未執行。')
+    from .narrative_quality import repeated_passage
+    if repeated_passage(prose,recent_rows):
+        retry=copy.deepcopy(messages)
+        retry[0]['content']+='\n上一份草稿大段重複先前對話，未被接受。只回答今次問題，寫出新回應。'
+        raw=complete(retry,base_url,550,.25,response_schema=DIALOGUE_SCHEMA,raw=True)
+        data=parse_proposal(raw) if isinstance(raw,str) else raw
+        prose=data.get('narration') if isinstance(data,dict) and set(data)=={'narration'} else None
+        if not isinstance(prose,str) or not prose.strip() or len(prose)>1200 or repeated_passage(prose,recent_rows):
+            raise RuleError('人物回覆重複先前對話；故事未執行，請重試。')
     # Known mechanical contradiction; broader narrative truth is evaluated
     # separately and remains a product limitation.
     for item in objects.values():

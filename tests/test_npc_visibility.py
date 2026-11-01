@@ -48,6 +48,12 @@ class NPCVisibilityTests(unittest.TestCase):
         shown=hide_name('那年輕漁民——你稱呼他為阿海——衝到你面前。阿海喘著氣。',npc)
         self.assertEqual(shown,'那年輕漁民衝到你面前。一名年輕漁民喘著氣。')
 
+    def test_appearance_label_cannot_become_personal_name(self):
+        npc={'name':'艾莉亞（Aria）','name_known':False,
+             'public_name':'一位中年女性','description':'一位中年女性在茶館整理桌椅。'}
+        shown=hide_name('那位名叫一位中年女性的中年女性望向你。',npc)
+        self.assertEqual(shown,'那位中年女性望向你。')
+
     def test_opening_and_card_wait_for_spoken_introduction(self):
         candidate=fixture()
         candidate['plan']['player']['background'] += '小禾尚未認識這位旅人。'

@@ -97,6 +97,39 @@ class GMContextTests(unittest.TestCase):
         self.assertEqual(model.call_count,1)
         self.assertEqual(result['narration'],old)
 
+    def test_long_copied_story_is_retried_before_recording(self):
+        old='安雅走到碼頭，望著雨中的船隻，告訴你潮水仍在上漲。'*6
+        fresh='安雅聽完這次問題，指向渡船旁的告示，說船長會在午後公布時間。'
+        with patch('kobold_rpg.model._complete',side_effect=[
+                {'narration':old,'changes':{}},
+                {'narration':fresh,'changes':{}}]) as model:
+            result=reply(self.state,'我現在問她新的船期','http://local',
+                         recent=[{'declaration':'之前問過船期','narration':old}])
+        self.assertEqual(model.call_count,2)
+        self.assertEqual(result['narration'],fresh)
+
+    def test_persistently_copied_story_fails_without_commit(self):
+        from kobold_rpg.engine import RuleError
+        old='安雅走到碼頭，望著雨中的船隻，告訴你潮水仍在上漲。'*6
+        with patch('kobold_rpg.model._complete',return_value={'narration':old,'changes':{}}) as model:
+            with self.assertRaisesRegex(RuleError,'回覆重複'):
+                reply(self.state,'我現在問她新的船期','http://local',
+                      recent=[{'declaration':'之前問過船期','narration':old}])
+        self.assertEqual(model.call_count,2)
+
+    def test_focused_question_retries_long_copied_dialogue(self):
+        from kobold_rpg.calibrated_gm_trial import focused_dialogue
+        old='安雅望著河面，說雨水還沒退去，渡船暫時不能開航。'*6
+        fresh='安雅指著碼頭的新告示，說船長改在午後公布開航時間。'
+        calls=[]
+        def complete(*args,**kwargs):
+            calls.append(args[0]);return {'narration':old if len(calls)==1 else fresh}
+        prose,_=focused_dialogue(self.state,'而家幾時開船？','anya',
+            [{'revision':1,'declaration':'幾時開？','narration':old,'witnesses':['anya']}],
+            'http://none',complete)
+        self.assertEqual(prose,fresh)
+        self.assertEqual(len(calls),2)
+
     def test_field_dates_come_from_real_state_changes_not_model_supplied_revisions(self):
         with tempfile.TemporaryDirectory() as folder:
             engine=Engine(Path(folder)/'world.sqlite3',seed=self.state)

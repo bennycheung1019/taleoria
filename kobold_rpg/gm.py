@@ -436,6 +436,16 @@ def reply(state,text,base_url,recent=None,state_provenance=None):
             raw=_complete(corrected_messages,base_url,output_max,.35,
                           response_schema=reply_schema(state),raw=True)
         result=establish_details(state,decode_reply(raw))
+    from .narrative_quality import repeated_passage
+    if repeated_passage(result.get('narration'),past):
+        retry=copy.deepcopy(messages)
+        retry[0]['content']+='\n\n本輪首次草稿大段複製先前敘事，未被接受。只處理最後一則玩家輸入，寫出本輪新結果與相應 changes；不要重述舊段落。'
+        with stage('修正重複敘事'):
+            raw=_complete(retry,base_url,output_max,.35,
+                          response_schema=reply_schema(state),raw=True)
+        result=establish_details(state,decode_reply(raw))
+        if repeated_passage(result.get('narration'),past):
+            raise RuleError('回覆重複先前故事；這次行動未有寫入，請重試。')
     from .ability_sources import inspect_reply
     issues,checked=inspect_reply(state,result)
     if not issues:

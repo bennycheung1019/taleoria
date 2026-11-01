@@ -50,6 +50,11 @@ def hide_name(text, npc, *, before=None):
     pair = PAIR.fullmatch(canonical.strip())
     if pair:
         left = re.sub(r'(?<![A-Za-z])' + re.escape(pair[2]) + r'(?![A-Za-z])', label, left, flags=re.I)
+    # A visible description is not a personal name. This also repairs a
+    # malformed phrase learned from older, already accepted narration.
+    false_name=r'(?:名叫|名字叫|叫做|叫作|稱為|被稱為)\s*'+re.escape(label)
+    left=re.sub(false_name+r'\s*的','',left)
+    left=re.sub(false_name,label,left)
     return left + right
 
 
