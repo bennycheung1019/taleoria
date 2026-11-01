@@ -33,38 +33,3 @@ WORLD_SCHEMA['properties']['player']['properties']['name']=dict(BILINGUAL_NAME)
 WORLD_SCHEMA['properties']['npc']['properties']['name']=dict(BILINGUAL_NAME)
 WORLD_SCHEMA['properties']['location']['properties']['name']=dict(BILINGUAL_NAME)
 WORLD_SCHEMA['properties']['location']['properties']['nearby']['items']['properties']['name']=dict(BILINGUAL_NAME)
-AUDIT_SCHEMA=obj({'supported':{'type':'boolean'},'actors':texts(),
-    'powers':rows({'actor':text(),'power':text(),'target':text()}),'issues':texts()})
-
-
-def audit_schema(actor_ids):
-    # Restrict generated references in the existing audit call, not a new pass.
-    return obj({'supported':{'type':'boolean'},
-        'actors':{'type':'array','items':{'type':'string','enum':list(actor_ids)},'minItems':1},
-        'powers':rows({'actor':{'type':'string','enum':list(actor_ids)},'power':text(),
-                       'target':{'type':'string','enum':list(actor_ids)}}),'issues':texts()})
-
-
-def dialogue_schema(target):
-    return obj({'reason':text(),'narration':text(),
-        'outcome':{'type':'string','enum':['success','partial','failure']},
-        'events':rows({'type':{'type':'string','enum':['npc_update']},
-            'npc':{'type':'string','enum':[target]},
-            'field':{'type':'string','enum':['stance']},'value':text()})})
-
-
-def proposal_schema(typed_events=True):
-    # Event semantics stay with the engine; every story uses the same envelope.
-    def bounded(size):return {'type':'string','maxLength':size}
-    def event(kind,fields):return obj({'type':{'type':'string','enum':[kind]},**fields})
-    identifier=bounded(120)
-    variants=[event('npc_update',{'npc':identifier,'field':{'type':'string','enum':['condition','stance']},'value':bounded(400)}),
-        event('fact',{'text':bounded(600),'visibility':{'type':'string','enum':['public','private']}}),
-        event('move',{'destination':identifier}),
-        event('npc_move',{'npc':identifier,'from':identifier,'destination':identifier,'basis':bounded(300)}),
-        event('power_use',{'actor':identifier,'power':identifier,'target':identifier}),
-        event('harm',{'actor':identifier,'target':identifier,'weapon':identifier,'condition':bounded(300),
-                      'fatal':{'type':'boolean'},'basis':bounded(300)})]
-    return obj({'narration':bounded(700),'outcome':{'type':'string','enum':['success','failure','partial','clarify']},
-        'reason':bounded(220),
-        'events':{'type':'array','items':{'anyOf':variants} if typed_events else {'type':'object'},'maxItems':20}})

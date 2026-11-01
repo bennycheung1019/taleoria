@@ -5,7 +5,6 @@ import tempfile
 import unittest
 from kobold_rpg.engine import Engine, RuleError
 from kobold_rpg.campaign import new_campaign
-from kobold_rpg.canon import digest
 from kobold_rpg.worldgen import preferences
 
 
@@ -33,38 +32,9 @@ class PlayerKnowledgeTests(unittest.TestCase):
         self.assertNotIn('不可自動公開的秘密',json.dumps(view,ensure_ascii=False))
         self.assertNotIn('inner_life',view['npcs']['hark'])
 
-    def test_people_remain_in_book_and_last_seen_does_not_follow_secret_movement(self):
-        self.engine.submit({'kind':'observe','text':'環顧四周'},'look',0)
-        self.engine.submit({'kind':'travel','text':'前往河街','destination':'river_street'},'walk',1)
-        self.engine.submit({'kind':'travel','text':'前往渡口','destination':'pier'},'pier',2)
-        view=self.engine.public_state()
-        self.assertEqual(set(view['people']),{'hark','anya'})
-        self.assertEqual(view['people']['hark']['last_seen'],'霧橋鎮北門（Mistbridge North Gate）')
-        self.assertNotIn('hark',view['npcs'])
-        self.assertEqual(view['atlas']['origin'],'gate')
-        self.assertTrue(next(n for n in view['atlas']['nodes'] if n['id']=='gate')['visited'])
-
     def proposal(self,quote='弟弟還在家裡等我。'):
         return {'outcome':'success','reason':'哈克公開回答。','narration':'哈克說：「'+quote+'」',
                 'events':[{'type':'character_note','npc':'hark','kind':'said','quote':quote}]}
-
-    def test_new_information_is_only_added_after_approval_and_is_a_claim(self):
-        proposal=self.proposal();audit={'revision':0,'proposal_hash':digest(proposal),
-            'result':{'supported':True,'actors':['hark'],'powers':[],'issues':[]}}
-        draft=self.engine.propose({'kind':'speak','target':'hark','text':'我問他為何急著回家。'},proposal,0,audit=audit)
-        self.assertEqual(len(self.engine.public_state()['people']['hark']['facts']),1)
-        self.engine.approve(draft['id'],'approve')
-        note=self.engine.public_state()['people']['hark']['facts'][-1]
-        self.assertEqual(note['kind'],'said');self.assertEqual(note['quote'],'弟弟還在家裡等我。')
-        self.assertNotIn('verified',note.values())
-        self.assertTrue(self.engine.verify())
-
-    def test_notes_cannot_copy_private_material_or_come_from_unmet_people(self):
-        for change in ({'npc':'anya'},{'quote':'不可自動公開的秘密'}):
-            proposal=self.proposal();proposal['events'][0].update(change)
-            with self.assertRaises(RuleError):
-                self.engine.propose({'kind':'speak','target':'hark','text':'你好。'},proposal,0)
-        self.assertEqual(self.engine.state()['revision'],0)
 
 
 class CreationDefaultsTests(unittest.TestCase):

@@ -9,7 +9,6 @@ from unittest.mock import patch
 from kobold_rpg.engine import Engine, RuleError
 from kobold_rpg.campaign import new_campaign
 from kobold_rpg.library import CampaignLibrary
-from kobold_rpg.canon import digest
 from server import make_handler
 from test_library import fixture
 
@@ -19,13 +18,14 @@ class AsyncGenerationTests(unittest.TestCase):
         self.tmp=tempfile.TemporaryDirectory();self.addCleanup(self.tmp.cleanup)
         self.engine=Engine(Path(self.tmp.name)/'world.db',seed=new_campaign())
         self.library=CampaignLibrary(Path(self.tmp.name)/'library',self.engine)
-        self.handler=make_handler(self.engine,'http://127.0.0.1:5001','test',self.library,enricher=lambda *args: [],planner=None,gm=None)
+        self.fake_gm=lambda *args,**kwargs: {'narration':'你看見雨中的城門。','changes':{}}
+        self.handler=make_handler(self.engine,'http://127.0.0.1:5001','test',self.library,gm=lambda *args,**kwargs:self.fake_gm(*args,**kwargs))
         self.server=ThreadingHTTPServer(('127.0.0.1',0),self.handler)
         self.thread=threading.Thread(target=self.server.serve_forever,daemon=True);self.thread.start()
         self.addCleanup(self.stop)
 
     def stop(self):
-        self.handler.jobs.join();self.handler.background.join()
+        self.handler.jobs.join();self.handler.illustrations.join()
         self.server.shutdown();self.server.server_close();self.thread.join()
 
     def request(self,method,path,body=None,session=None,token='test',disconnect=False):
@@ -46,12 +46,11 @@ class AsyncGenerationTests(unittest.TestCase):
 
     def test_navigation_reload_and_disconnected_client_commit_exactly_once(self):
         started=threading.Event();release=threading.Event()
-        proposal={'outcome':'success','reason':'回答問候。','narration':'哈克說：「你好。」','events':[]}
+        proposal={'narration':'哈克說：「你好。」','changes':{}}
         def generating(*args,**kwargs):
             started.set();release.wait(3);return proposal
-        audit={'revision':0,'proposal_hash':digest(proposal),'result':{'supported':True,'actors':['hark'],'powers':[],'issues':[]}}
         body={'text':'我問哈克：「你好嗎？」','revision':0,'request_id':'turn'}
-        with patch('server.react',side_effect=generating) as model,patch('server.audit_narration',return_value=audit):
+        with patch.object(self,'fake_gm',side_effect=generating) as model:
             try:
                 # Close the original connection before even reading its reply.
                 self.request('POST','/api/play',body,disconnect=True)
@@ -65,7 +64,7 @@ class AsyncGenerationTests(unittest.TestCase):
             finally:release.set();self.handler.jobs.join()
             self.assertEqual(self.result()[1]['status'],'done')
             result=self.result()[1]['result'];self.assertIn('你好',result['turn']['narration'])
-            self.handler.background.join();before=self.engine.state()
+            self.handler.illustrations.join();before=self.engine.state()
             self.assertEqual(self.request('POST','/api/play',body)[0],202)
             self.assertEqual(self.result()[1]['result'],result)
             self.assertEqual(model.call_count,1);self.assertEqual(self.engine.state(),before)
@@ -73,7 +72,7 @@ class AsyncGenerationTests(unittest.TestCase):
 
     def test_failed_model_json_is_retained_without_retry_or_world_change(self):
         body={'text':'我問哈克：「你好嗎？」','revision':0,'request_id':'turn'}
-        with patch('server.react',side_effect=RuleError('模型沒有回傳可驗證的 JSON。')) as model:
+        with patch.object(self,'fake_gm',side_effect=RuleError('模型沒有回傳可驗證的 JSON。')) as model:
             self.assertEqual(self.request('POST','/api/play',body)[0],202);self.handler.jobs.join()
             self.assertEqual(self.result()[1]['status'],'error')
             self.assertIn('JSON',self.result()[1]['result']['error'])
@@ -107,7 +106,7 @@ class AsyncGenerationTests(unittest.TestCase):
 
     def test_second_request_is_not_queued_behind_unfinished_generation(self):
         started=threading.Event();release=threading.Event()
-        def generating(*args):started.set();release.wait(3);return fixture()
+        def generating(*args,**kwargs):started.set();release.wait(3);return fixture()
         body={'preferences':fixture()['preferences'],'request_id':'world'}
         with patch('server.generate_world',side_effect=generating) as model:
             try:

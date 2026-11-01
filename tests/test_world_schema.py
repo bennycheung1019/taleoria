@@ -17,7 +17,7 @@ class WorldSchemaTests(unittest.TestCase):
 
     def test_requested_english_name_prefix_cannot_consume_the_rest_of_the_plan(self):
         candidate=fixture();plan=copy.deepcopy(candidate['plan']);plan['player']['name']='班尼（Benny）'
-        with patch('kobold_rpg.worldgen._complete',return_value=plan) as complete,patch('kobold_rpg.worldgen.audit_narration',return_value=candidate['audit']):
+        with patch('kobold_rpg.worldgen._complete',return_value=plan) as complete:
             generate_world({**candidate['preferences'],'player_name':'Benny'},'http://local')
         pattern=complete.call_args.kwargs['response_schema']['properties']['player']['properties']['name']['pattern']
         self.assertIsNotNone(re.fullmatch(pattern,'班尼（Benny）'))
@@ -33,23 +33,24 @@ class WorldSchemaTests(unittest.TestCase):
         self.assertEqual(payload['response_format']['json_schema']['schema'],schema)
         self.assertEqual(payload['response_format']['type'],'json_schema')
 
-    def test_world_creation_uses_full_blueprint_constraints(self):
+    def test_world_creation_uses_compact_open_world_without_story_outline(self):
         candidate=fixture()
-        with patch('kobold_rpg.worldgen._complete',return_value=candidate['plan']) as complete,patch('kobold_rpg.worldgen.audit_narration',return_value=candidate['audit']) as audit:
+        with patch('kobold_rpg.worldgen._complete',return_value=candidate['plan']) as complete:
             result=generate_world(candidate['preferences'],'http://local')
         self.assertEqual(complete.call_count,1)
         schema=complete.call_args.kwargs['response_schema']
         self.assertIn('阿晴',schema['properties']['player']['properties']['name']['pattern'])
-        self.assertEqual(schema['properties']['npc'],WORLD_SCHEMA['properties']['npc'])
+        self.assertEqual(schema['properties']['location']['properties']['nearby']['maxItems'],1)
         self.assertEqual([m['role'] for m in complete.call_args.args[0]],['system','user'])
         self.assertIn('RPG OS v1.01 原規則摘錄',complete.call_args.args[0][0]['content'])
-        self.assertTrue(audit.call_args.kwargs['structured'])
         self.assertEqual(result['plan'],candidate['plan'])
+        self.assertNotIn('audit',result)
+        self.assertNotIn('story',result['seed'])
 
     def test_english_player_preference_is_preserved_with_a_chinese_alias(self):
         candidate=fixture();plan=copy.deepcopy(candidate['plan']);plan['player']['name']='班尼（Benny）'
         prefs={**candidate['preferences'],'player_name':'Benny'}
-        with patch('kobold_rpg.worldgen._complete',return_value=plan),patch('kobold_rpg.worldgen.audit_narration',return_value=candidate['audit']):
+        with patch('kobold_rpg.worldgen._complete',return_value=plan):
             result=generate_world(prefs,'http://local')
         self.assertEqual(result['seed']['pc']['name'],'班尼（Benny）')
         plan['player']['name']='班尼（Other Name）'

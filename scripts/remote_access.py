@@ -16,7 +16,7 @@ from kobold_rpg.settings import load_settings
 def main():
     executable=shutil.which('cloudflared')
     if not executable:raise SystemExit('請先安裝 Cloudflare cloudflared：https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/')
-    settings=load_settings(ROOT);local=f"http://127.0.0.1:{settings['port']}";owned=None;tunnel=None
+    settings=load_settings(ROOT,'taleoria.preproduction.json');local=f"http://127.0.0.1:{settings['port']}";owned=None;tunnel=None
     status=ROOT/'data/remote-status.json';status.parent.mkdir(parents=True,exist_ok=True)
     tunnel_config=ROOT/'data/remote-tunnel.yml'
     tunnel_config.write_text('{}\n')
@@ -26,7 +26,8 @@ def main():
         except Exception:return False
     try:
         if not ready():
-            owned=subprocess.Popen([sys.executable,'-B','-u',str(ROOT/'server.py')],cwd=ROOT)
+            owned=subprocess.Popen([sys.executable,'-B','-u',str(ROOT/'server.py'),
+                                    '--config','taleoria.preproduction.json'],cwd=ROOT)
             for _ in range(50):
                 if ready():break
                 if owned.poll() is not None:raise SystemExit('Taleoria 未能啟動。')

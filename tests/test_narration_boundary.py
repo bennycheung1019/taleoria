@@ -31,7 +31,7 @@ class NarrationBoundaryTests(unittest.TestCase):
 
     def test_complete_and_truncated_plain_protocol_tails_are_hidden(self):
         for tail in ['"changes": {}','changes: {"npcs":','{"changes":{"npcs":{}}}',
-                     'establish: {"people":','player_power_uses: [','story_update: {']:
+                     'establish: {"people":','player_power_uses: [']:
             with self.subTest(tail=tail):self.assertEqual(decode_reply(PROSE+'\n\n'+tail)['narration'],PROSE)
 
     def test_truncated_envelope_with_complete_story_still_hides_nested_leak(self):

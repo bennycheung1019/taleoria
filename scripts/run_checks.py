@@ -7,11 +7,13 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-SOCKET_CLASSES = {'test_async_jobs.AsyncGenerationTests', 'test_story_first.StoryFirstHTTPTests',
-                  'test_private_api.PrivateAPITests', 'test_private_api.CanonAPITests',
-                  'test_player_api.PlayerAPITests','test_companion.CompanionTests',
-                  'test_gm_mode.GMDefaultAPITests','test_semantic_planning.SemanticPlayerAPITests'}
-SOCKET_METHODS = {'test_progress_names.ProgressTests.test_stream_completion_consumes_fragments_without_publishing_prose'}
+SOCKET_CLASSES = {'test_async_jobs.AsyncGenerationTests','test_companion.CompanionTests',
+                  'test_gm_mode.GMDefaultAPITests',
+                  'test_calibrated_e2e_trial.CalibratedHTTPTrialTests'}
+SOCKET_METHODS = {
+    'test_progress_names.ProgressTests.test_stream_completion_consumes_fragments_without_publishing_prose',
+    'test_condition_state_trial.ConditionStateTrialTests.test_injected_http_turn_commits_numeric_condition_once',
+}
 
 
 def flatten(suite):

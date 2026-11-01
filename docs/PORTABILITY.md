@@ -2,7 +2,7 @@
 
 ## 自己搬到另一部電腦
 
-1. 等故事、人物整理和圖片工作全部完成。
+1. 等故事和圖片工作全部完成。
 2. 在 Taleoria 終端按 Ctrl+C，待停止後再複製。
 3. 將整個 `Taleoria` 資料夾搬到新電腦；或執行 `python3 scripts/package_release.py --private`，搬走 `dist/Taleoria_Private_Backup.zip` 並解壓。
 4. 新電腦依 [INSTALL.md](../INSTALL.md) 安裝 Python、KoboldCpp、相同 GGUF，以及 Draw Things／DreamShaper（可選）。
@@ -31,6 +31,6 @@ python3 scripts/migrate_legacy.py "/舊專案所在位置/Kobold RPG"
 
 ## 給別人全新安裝
 
-執行 `python3 scripts/package_release.py`，分享 `dist/Taleoria.zip`。乾淨包只包含程式、測試、規則與指南，不包含你的 data、私人設定、圖片、模型或舊工作紀錄。第一次啟動會建立新的霧橋鎮戰役。
+執行 `python3 scripts/package_release.py`，分享 `dist/Taleoria.zip`。乾淨包只包含程式、測試、規則與指南，不包含你的 data、私人設定、圖片、模型或舊工作紀錄。第一次啟動會引導建立新世界。
 
 私人備份含完整劇情及世界私密資料，不能當作公開 release。程式升級時先備份，替換程式檔，保留 data、models 及 taleoria.local.json。

@@ -73,3 +73,48 @@ def recalled_context(engine,state,text,exclude=()):
             'scope':'已發生的原文回取，不代表所有在場者都聽到。沿用當時可感知資訊，不重新執行。'})
         if len(result)==2:break
     return list(reversed(result))
+
+
+def recalled_object_context(engine,state,text,exclude=(),limit=2):
+    """Retrieve older sourced state changes for one named or focused local object.
+
+    A person's presence is recorded separately; it is not proof they know it.
+    The present snapshot always wins over an older event.
+    """
+    here=state['pc']['location']
+    world=state.get('world',{})
+    entities={key:item for key,item in world.get('entities',{}).items()
+              if item.get('location')==here}
+    matches=[key for key,item in entities.items() if
+             key in text or (item.get('name') and item['name'] in text)]
+    if not matches and any(word in text for word in ('佢','它','嗰個','那個')):
+        focus=world.get('focus_object_id')
+        if focus in entities:matches=[focus]
+    if len(matches)!=1:return []
+    target=matches[0]
+    with engine.connect() as db:
+        rows=db.execute('SELECT revision,body,before_state,after_state FROM journal '
+                        'ORDER BY revision DESC LIMIT 128').fetchall()
+    ignored=set(exclude);result=[]
+    for row in rows:
+        if row['revision'] in ignored:continue
+        body=json.loads(row['body'])
+        changed=(body.get('gm_changes') or {}).get('world',{}).get('entities',{})
+        if body.get('status')!='approved' or target not in changed:continue
+        before=json.loads(row['before_state']);after=json.loads(row['after_state'])
+        old=before.get('world',{}).get('entities',{}).get(target,{})
+        new=after.get('world',{}).get('entities',{}).get(target,{})
+        result.append({'revision':row['revision'],
+                       'player_declaration':body['action']['text'][:240],
+                       'location':before['pc']['location'],
+                       'before_values':old.get('values',{}),
+                       'after_values':new.get('values',{}),
+                       'after_condition':new.get('condition_sentence'),
+                       'current_values':entities[target].get('values',{}),
+                       'current_condition':entities[target].get('condition_sentence'),
+                       'people_present_not_proven_knowers':[
+                           key for key,npc in before['npcs'].items()
+                           if npc.get('known') and npc.get('location')==before['pc']['location']],
+                       'source':'approved_journal_state_change'})
+        if len(result)==limit:break
+    return list(reversed(result))

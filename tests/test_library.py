@@ -6,10 +6,8 @@ from pathlib import Path
 from unittest.mock import patch
 from kobold_rpg.engine import Engine, RuleError
 from kobold_rpg.campaign import new_campaign
-from kobold_rpg.worldgen import build_world, generate_world, opening_proposal
-from kobold_rpg.canon import digest
+from kobold_rpg.worldgen import build_world, generate_world
 from kobold_rpg.library import CampaignLibrary
-from kobold_rpg.play import interpret
 
 
 def fixture():
@@ -27,10 +25,7 @@ def fixture():
                     'attraction': '尚未建立吸引', 'stance': '可以簡短交談'},
             'opening': '河水聲從店外傳來。小禾在門內整理藥草，抬頭說：「你好，需要幫忙嗎？」'}
     seed = build_world(plan, prefs)
-    proposal = opening_proposal(plan)
-    audit = {'revision': 0, 'proposal_hash': digest(proposal),
-             'result': {'supported': True, 'actors': ['ben', 'guide'], 'powers': [], 'issues': []}}
-    return {'preferences': prefs, 'plan': plan, 'seed': seed, 'audit': audit}
+    return {'preferences': prefs, 'plan': plan, 'seed': seed}
 
 
 class LibraryTests(unittest.TestCase):
@@ -62,24 +57,24 @@ class LibraryTests(unittest.TestCase):
         self.assertTrue(self.library.engine.verify())
 
     def test_bad_candidate_cannot_replace_current_world(self):
-        candidate = fixture(); candidate['audit']['result']['supported'] = False
+        candidate = fixture(); candidate['seed']['pc']['location'] = 'missing'
         preview = self.library.preview(candidate)
         before = self.library.engine.state()
         with self.assertRaises(RuleError): self.library.create(preview['preview_id'])
         self.assertEqual(self.library.engine.state(), before)
 
     def test_save_load_restores_complete_journal_without_mutating_snapshot(self):
-        self.original.submit({'kind':'observe','text':'我環顧四周。'}, 'look', 0)
+        self.original.record_gm_reply('我環顧四周。',{'narration':'雨落在城門前。','changes':{}},'look',0)
         saved = self.library.save('第一次抵達')
         save_path = Path(self.library.index['saves'][saved['id']]['path'])
-        self.original.submit({'kind':'travel','text':'前往避雨棚','destination':'shelter'}, 'walk', 1)
+        self.original.record_gm_reply('前往避雨棚',{'narration':'你走進避雨棚。','changes':{'pc':{'location':'shelter'}}},'walk',1)
         old_session = self.library.session_id
         self.library.load('save', saved['id'])
         self.assertEqual(self.library.engine.state()['revision'], 1)
         self.assertEqual(self.library.engine.state()['pc']['location'], 'gate')
         self.assertNotEqual(old_session, self.library.session_id)
         self.assertNotEqual(self.library.engine.path, save_path)
-        self.library.engine.submit({'kind':'observe','text':'再看看。'}, 'look-again', 1)
+        self.library.engine.record_gm_reply('再看看。',{'narration':'雨仍未停。','changes':{}},'look-again',1)
         self.assertEqual(Engine(save_path).state()['revision'], 1)
         self.assertEqual(self.library.engine.state()['revision'], 2)
         self.assertTrue(self.library.engine.verify())
@@ -128,13 +123,13 @@ class WorldPlanTests(unittest.TestCase):
 
     def test_bad_opening_is_rewritten_before_preview(self):
         candidate=fixture();bad=copy.deepcopy(candidate['plan']);bad['opening']='你推開門。'
-        with patch('kobold_rpg.worldgen._complete',side_effect=[bad,{'opening':candidate['plan']['opening']}]),patch('kobold_rpg.worldgen.audit_narration',return_value=candidate['audit']):
+        with patch('kobold_rpg.worldgen._complete',side_effect=[bad,{'opening':candidate['plan']['opening']}]):
             result=generate_world(candidate['preferences'],'http://127.0.0.1:5001')
         self.assertEqual(result['plan']['opening'],candidate['plan']['opening'])
 
     def test_model_generation_keeps_preview_separate_and_checks_name(self):
         candidate=fixture()
-        with patch('kobold_rpg.worldgen._complete',return_value=candidate['plan']), patch('kobold_rpg.worldgen.audit_narration',return_value=candidate['audit']):
+        with patch('kobold_rpg.worldgen._complete',return_value=candidate['plan']):
             result=generate_world(candidate['preferences'],'http://127.0.0.1:5001')
         self.assertEqual(result['seed']['revision'],0)
         bad=copy.deepcopy(candidate['plan']);bad['player']['name']='錯誤姓名'
@@ -154,33 +149,6 @@ class WorldPlanTests(unittest.TestCase):
         self.assertEqual(seed['canon']['powers']['power_1']['established_revision'],0)
         self.assertEqual(seed['pc']['spells'],['power_1'])
         self.assertIn('只照明',seed['abilities']['power_1']['effect'])
-
-
-class InputTests(unittest.TestCase):
-    def setUp(self): self.state=new_campaign()
-
-    def test_free_text_remains_review_and_speech_preserves_original_text(self):
-        text='我問哈克：「你最近學會魔法了嗎？」'
-        action=interpret(self.state,text)
-        self.assertEqual(action['text'],text);self.assertEqual(action['kind'],'speak');self.assertEqual(action['target'],'hark')
-        from kobold_rpg.understanding import pack
-        self.assertEqual(interpret(self.state,'我想仔細檢查這張紙。',resolver=lambda text:pack('action',text))['kind'],'freeform')
-
-    def test_cast_and_known_item_keep_prerequisite_checks(self):
-        self.assertEqual(interpret(self.state,'我使用火焰魔法。')['ability'],'fire_magic')
-        self.assertEqual(interpret(self.state,'我使用繩索固定木板。')['item'],'rope')
-        self.assertEqual(interpret(self.state,'我環顧四周。')['kind'],'observe')
-
-    def test_unknown_route_does_not_create_a_location(self):
-        action=interpret(self.state,'我前往另一個星球。')
-        self.assertEqual(action['kind'],'freeform')
-        self.assertEqual(action['destination'],'')
-        self.assertNotIn('unknown_destination',self.state['locations'])
-
-    def test_presets_do_not_rewrite_text_or_grant_success(self):
-        action=interpret(self.state,'我前往避雨棚。',{'kind':'travel','destination':'shelter'})
-        self.assertEqual(action['destination'],'shelter')
-        self.assertEqual(self.state['pc']['location'],'gate')
 
 
 if __name__=='__main__': unittest.main()

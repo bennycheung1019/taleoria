@@ -16,7 +16,8 @@ from scripts.migrate_legacy import copy_data
 
 ROOT_FILES = ('README.md', 'INSTALL.md', 'LICENSE', 'THIRD_PARTY.md', 'VERSION',
               '.gitignore', '.vercelignore', 'taleoria.example.json', 'taleoria.py', 'server.py',
-              'Start_Taleoria.command', 'Start_Remote_Taleoria.command', 'Start_Taleoria.bat', 'start_taleoria.sh',
+              'taleoria.preproduction.json', 'Start_Taleoria.command',
+              'Start_Taleoria_Preproduction.command', 'Start_Remote_Taleoria.command', 'start_taleoria.sh',
               'app.js', 'connection.js', 'web-defaults.json', 'vercel.json', 'ui.html', 'styles.css', 'illustrations.js', 'illustrations.css',
               'favicon.svg', 'taleoria-mark.svg')
 FOLDERS = ('kobold_rpg', 'rules', 'tests', 'scripts', 'docs')

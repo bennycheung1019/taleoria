@@ -3,9 +3,9 @@ import copy
 import json
 import uuid
 import re
-from .engine import initial_state, RuleError, normalize_action
+from .engine import initial_state, RuleError
 from .canon import establish
-from .model import _complete, audit_narration,InvalidJSONError
+from .model import _complete,InvalidJSONError
 from .rulebook import excerpts
 from .storytypes import defaults, difficulty, DIFFICULTIES
 from .names import has_english, chinese,PAIR
@@ -102,7 +102,7 @@ def build_world(plan, prefs):
              'condition', 'priorities', 'appraisal', 'attraction', 'stance'}
     if not isinstance(player, dict) or set(player) != pkeys or not isinstance(npc, dict) or set(npc) != nkeys:
         raise RuleError('角色草案缺少身分、能力或 NPC 個人基礎。')
-    if not isinstance(location, dict) or set(location) - {'name', 'description', 'nearby'} or not {'name', 'description'} <= set(location):
+    if not isinstance(location, dict) or set(location) - {'name', 'description', 'nearby','objects'} or not {'name', 'description'} <= set(location):
         raise RuleError('需要完整的起點資料。')
     for key in pkeys - {'skills', 'powers', 'items'}:
         _text(player[key], '主角' + key)
@@ -118,6 +118,23 @@ def build_world(plan, prefs):
             raise RuleError('附近地點需要名稱及景物描述。')
         for value in place.values():
             _text(value, '附近地點')
+    objects=location.get('objects',[])
+    if not isinstance(objects,list) or len(objects)>20:
+        raise RuleError('同場可互動物件最多二十件。')
+    names=set()
+    for item in objects:
+        if (not isinstance(item,dict) or set(item)!={'name','type','source_quote','force_profile'}
+                or item['type'] not in ('door','crate','object')):
+            raise RuleError('場景物件格式不完整。')
+        name=_text(item['name'],'物件名稱',80)
+        quote=_text(item['source_quote'],'物件來源',240)
+        if name in names or chinese(name) not in quote or quote not in location['description']:
+            raise RuleError('場景物件未有唯一名稱或已建立描述。')
+        names.add(name)
+        profile=item['force_profile']
+        if profile is not None and (not isinstance(profile,dict) or
+                set(profile)!={'tier','effect_key','initial','source_quote','initial_source_quote'}):
+            raise RuleError('場景物件強度格式無效。')
     if not isinstance(player['skills'], list) or not 1 <= len(player['skills']) <= 8:
         raise RuleError('主角需要一至八項普通能力。')
     for skill in player['skills']:
@@ -170,6 +187,19 @@ def build_world(plan, prefs):
             'requires_flags': [], 'result_form': None}, source, 0, RuleError)
     state['world'] = {'background': plan['background'], 'rules': copy.deepcopy(plan['rules']),
                       'preferences': prefs, 'source': source}
+    if objects:
+        state['world']['entities']={}
+        for index,item in enumerate(objects):
+            key=f'scene_object_{index+1}'
+            state['world']['entities'][key]={
+                'name':item['name'],'type':item['type'],'location':'start',
+                'description':item['source_quote'],'values':{},'value_sources':{}}
+            if item['force_profile'] is not None:
+                from .calibrated_difficulty_trial import register_force_profile
+                profile=item['force_profile']
+                state=register_force_profile(state,key,profile['tier'],
+                    profile['effect_key'],profile['initial'],profile['source_quote'],
+                    profile['initial_source_quote'])
     state['item_catalog'] = {f'item_{i+1}': {**copy.deepcopy(item), 'source': source}
                              for i, item in enumerate(player['items'])}
     state['media'] = {'scenes': {}, 'portraits': {}, 'items': {}}
@@ -177,31 +207,19 @@ def build_world(plan, prefs):
     return state
 
 
-def opening_proposal(plan):
-    return {'outcome': 'success', 'reason': '使用者確認的世界與角色已在首次敘事前建立。',
-            'narration': plan['opening'], 'events': []}
-
-
-def opening_action():
-    return normalize_action({'kind': 'freeform', 'text': '【新世界開場】呈現已建立的起點，保留玩家下一個決定。'})
-
-
-def generate_plan(raw, model_url, compact=False):
+def generate_plan(raw, model_url, scene_trial=False):
     prefs = preferences(raw)
     schema=copy.deepcopy(WORLD_SCHEMA)
-    if compact:
-        def bound(node):
-            if node.get('type')=='string':node.update(minLength=1,maxLength=120)
-            for child in node.get('properties',{}).values():bound(child)
-            if isinstance(node.get('items'),dict):bound(node['items'])
-        bound(schema)
-        schema['properties']['title']['maxLength']=60
-        schema['properties']['background']['maxLength']=240
-        schema['properties']['opening']['maxLength']=240
-        schema['properties']['location']['properties']['nearby']['maxItems']=1
-    instruction=WORLD_SYSTEM
-    if compact:
-        instruction+='\n這是快速開局。世界背景與開場各約八十字，其他欄位各用一個短句（約十五至三十字），只建立起點與最多一個附近地點。普通人物不必有秘密或任務。不預寫後續場景、對白與遠處人物。保留玩家明確要求；細節可在實際接觸時再建立。'
+    def bound(node):
+        if node.get('type')=='string':node.update(minLength=1,maxLength=120)
+        for child in node.get('properties',{}).values():bound(child)
+        if isinstance(node.get('items'),dict):bound(node['items'])
+    bound(schema)
+    schema['properties']['title']['maxLength']=60
+    schema['properties']['background']['maxLength']=240
+    schema['properties']['opening']['maxLength']=240
+    schema['properties']['location']['properties']['nearby']['maxItems']=1
+    instruction=WORLD_SYSTEM+'\n這是快速開局。世界背景與開場各約八十字，其他欄位各用一個短句（約十五至三十字），只建立起點與最多一個附近地點。普通人物不必有秘密或任務。不預寫後續場景、對白與遠處人物。保留玩家明確要求；細節可在實際接觸時再建立。'
     requested=prefs['player_name']
     if requested:
         pair=PAIR.fullmatch(requested)
@@ -214,7 +232,7 @@ def generate_plan(raw, model_url, compact=False):
     with stage('建立世界與人物'):
       try:
         plan = normalize_plan(_complete([{'role': 'system', 'content': '已核對的 RPG OS v1.01 原規則摘錄：\n' + excerpts('observe')+'\n\n'+instruction},
-                      {'role': 'user', 'content': json.dumps(prefs, ensure_ascii=False)}], model_url, 2400 if compact else 4096, 0.65, timeout=600,response_schema=schema))
+                      {'role': 'user', 'content': json.dumps(prefs, ensure_ascii=False)}], model_url, 2400, 0.65, timeout=600,response_schema=schema))
       except InvalidJSONError as exc:
         raise RuleError('新世界草案未能完整產生，尚未建立或切換世界。你的設定與目前故事仍保留，請稍後再試。') from exc
     if not isinstance(plan,dict) or not all(isinstance(plan.get(key),dict) for key in ('player','npc','location')) or not all(isinstance(plan[key].get('name'),str) for key in ('player','npc','location')):
@@ -259,13 +277,23 @@ def generate_plan(raw, model_url, compact=False):
             if not isinstance(value,str) or not re.fullmatch(r"[A-Za-z][A-Za-z '\-]{0,80}",value):
                 raise RuleError('英文名稱格式不正確，目前冒險沒有改動。')
             holders[key]['name']=missing[key]+'（'+value+'）'
+    scene_setup=None
+    if scene_trial:
+        from .scene_setup_trial import extract_scene_objects
+        try:
+            rows,rejected,tokens=extract_scene_objects(plan['location']['description'],model_url)
+            scene_setup={'status':'completed','accepted':len(rows),
+                         'rejected':len(rejected),'input_tokens':tokens}
+        except (RuleError,ValueError,TypeError) as exc:
+            rows=[];scene_setup={'status':'failed','error':str(exc)}
+        plan['location']['objects']=rows
     state = build_world(plan, prefs)
-    return {'plan':plan,'preferences':prefs,'seed':state}
+    result={'plan':plan,'preferences':prefs,'seed':state}
+    if scene_setup is not None:result['scene_setup']=scene_setup
+    return result
 
 
-def generate_world(raw, model_url):
-    candidate=generate_plan(raw,model_url)
-    plan,prefs,state=candidate['plan'],candidate['preferences'],candidate['seed']
-    proposal = opening_proposal(plan)
-    audit = audit_narration(state, opening_action(), proposal, model_url,structured=True)
-    return {'plan': plan, 'preferences': prefs, 'seed': state, 'audit': audit}
+def generate_world(raw, model_url, scene_trial=False):
+    """Create a playable opening without a future story blueprint."""
+    candidate=generate_plan(raw,model_url,scene_trial=scene_trial)
+    return candidate

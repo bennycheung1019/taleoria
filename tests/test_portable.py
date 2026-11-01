@@ -17,7 +17,7 @@ class PortableTests(unittest.TestCase):
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory();self.addCleanup(self.tmp.cleanup)
         self.original=Engine(Path(self.tmp.name)/'world.db',seed=new_campaign())
-        self.original.submit({'kind':'observe','text':'環顧四周'},'look',0)
+        self.original.record_gm_reply('環顧四周',{'narration':'門外下著雨。','changes':{}},'look',0)
         self.library=CampaignLibrary(Path(self.tmp.name)/'library',self.original)
 
     def test_file_restores_full_world_history_and_known_people(self):
@@ -28,7 +28,7 @@ class PortableTests(unittest.TestCase):
         self.assertEqual(self.library.engine.public_state()['people'],self.original.public_state()['people'])
         self.assertNotEqual(self.library.engine.path,self.original.path)
         self.assertNotEqual(self.library.session_id,old_session)
-        self.library.engine.submit({'kind':'observe','text':'再看看'},'again',1)
+        self.library.engine.record_gm_reply('再看看',{'narration':'仍在下雨。','changes':{}},'again',1)
         self.assertEqual(self.original.state()['revision'],1)
         self.assertEqual(self.library.engine.state()['revision'],2)
 

@@ -36,12 +36,6 @@ def verified_sources():
     return bodies
 
 
-def physical_excerpts():
-    bodies=verified_sources()
-    paragraph=next(p for p in bodies['ENGINE_freeform.md'].split('\n\n') if p.startswith('Resolve uncertain outcomes by GM judgment'))
-    return 'SOURCE: ENGINE/freeform.md — resolution\n'+paragraph
-
-
 def excerpts(action_kind):
     bodies=verified_sources()
     selected = [

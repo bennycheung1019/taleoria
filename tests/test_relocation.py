@@ -25,7 +25,7 @@ class RelocationTests(unittest.TestCase):
         self.old.mkdir(parents=True)
         self.engine = Engine(self.old / 'mistbridge.sqlite3', seed=new_campaign())
         self.library = CampaignLibrary(self.old / 'library', self.engine)
-        self.engine.submit({'kind': 'observe', 'text': '我查看城門。'}, 'relocate-observe', 0)
+        self.engine.record_gm_reply('我查看城門。',{'narration':'城門仍半掩。','changes':{}},'relocate-observe',0)
         self.saved = self.library.save('搬機前')
         self.library.load('save', self.saved['id'])
         art = self.library.root / 'illustrations'

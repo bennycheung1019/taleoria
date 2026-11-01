@@ -9,7 +9,7 @@ import uuid
 from contextlib import closing
 from datetime import datetime, timezone
 from .engine import Engine, RuleError
-from .worldgen import opening_action, opening_proposal, build_world
+from .worldgen import build_world
 from .player_view import encounters
 from .portable import validate_file,validate_state
 
@@ -170,12 +170,7 @@ class CampaignLibrary:
             path = self.root / 'campaigns' / (preview_id + '.sqlite3')
             engine = Engine(path, seed=candidate['seed'])
             if engine.state()['revision'] == 0:
-                if candidate.get('source_mode') in {'rpg_os_director','rpg_os_progressive'}:
-                    engine.record_gm_reply('【新世界開場】',{'narration':candidate['plan']['opening'],'changes':{}},'world-opening-'+preview_id,0)
-                else:
-                    proposal = engine.propose(opening_action(), opening_proposal(candidate['plan']), 0,
-                                              'confirmed-world', candidate['audit'])
-                    engine.approve(proposal['id'], 'world-opening-' + preview_id)
+                engine.record_gm_reply('【新世界開場】',{'narration':candidate['plan']['opening'],'changes':{}},'world-opening-'+preview_id,0)
             key = self._index_campaign(engine)
             return self._activate(engine, key)
 

@@ -7,6 +7,7 @@ Malformed bookkeeping never rejects a delivered story.
 import copy
 import json
 import re
+import unicodedata
 from .engine import RuleError, require_text
 from .rulebook import verified_sources, section
 from .story_text import story_text
@@ -42,15 +43,10 @@ state_provenance 標示欄位實際更新版本，較舊不代表自動失效。
 本網站保存原文與狀態，不要求玩家手動登記或操作檔案才肯回應。narration 給完整自然故事，一至三個短段落；不寫內部清單、檢查理由、技術錯誤或玩家下一步選項。
 先列 player_power_uses，每項 {ability_id,manifested}，僅記玩家實際嘗試的超自然能力；未登記 ID 留空，普通動作、工具、假設及提問用 []。manifested 表示任何實際超自然作用，不是是否達成目的；局部熱度、精神壓力、讀取意圖、感知力量或被抵抗的干擾都算 true。沒有回合前來源就完全零作用，不能本輪覺醒或自授能力補造來源。純內在企圖不被 NPC 感知。
 changes 只列實際變化，無變化 {}。可用 pc/npcs/locations/abilities/canon/world/contract/item_catalog、facts_add、open_matters。人物及地點用 ID；新個體先有具體基礎再行為並一起保存。保留人格、情緒與關係的因果，不用好感分數。移動、外顯狀況、裝備改變時同步位置、場景與資料；普通裝備記 equipment_notes/inventory。沒改的欄位不重抄。
-公開人物筆記用 changes.player_view，與 npcs 並列，例如 {"player_view":{"hark":{"facts":{"family":{"text":"他說自己有弟弟。","kind":"said","evidence":"我家有一個弟弟"}},"relationship":{"text":"他願意繼續交談。","evidence":"我們可以繼續談談"}}}}。facts 用固定主題鍵更新背景或性格；relationship/condition 用 {text,evidence} 簡述可察覺的關係或狀況。evidence 必須摘錄本次 narration 至少四字。只存玩家已學內容，不公開私人內心、不代定玩家感情；沒變就省略。只有公開筆記用 text/evidence；內部 encounter 各值仍是字串，inner_life.memories 是陣列。
-story_director 是私密規劃，低於 RPG OS 與真實現況。機會只在探索時選用；不催日常、不重送拒絕的線索、不搬人搬地、授予力量、復活或取消後果。可拒絕、繞路、跳章或改變終局。抵達後沿用 nearby_characters 的固定人物，不把原地人物帶去替換；實際遇見才設 known:true。真相不自動成為 NPC 所知。
-進展才填 changes.story_update：chapter 為章節 ID，opportunities 為機會 ID 對 presented/followed/declined/lost 的物件，revealed 列真相 ID，status 可 active/paused/resolved/abandoned。summary 記因果，evidence 摘錄 narration 至少四字；未發生不推進。
 逐步建立：scene_people 只是在場人物索引，沿用 ID；只有 npcs 的人物載入了詳細資料。酒館等人群先用 locations 的 crowd（簡短背景字串）呈現，不替每名路人寫完整傳記。實際交談才在 changes.npcs 建立穩定個體，detail_level:incidental，具體身分、活動、態度、所知資訊及一項牽掛即可；名字未知可用穩定的外觀稱呼。持續交往才補充為 developed，不能倒造舊行為原因或新能力。群體提問只描寫合理的少數反應者，不逐人模擬。scene_focus 列本輪實際互動的人物 ID；同處酒館不等於聽到所有私語。重要承諾與共同經歷可寫人物 memory_note:{text,evidence}，evidence 摘錄本輪敘事，不編造未發生回憶。
-progressive 故事只有短骨架。玩家實際探索新方向時，在同一次回覆用 changes.story_expand 追加本次用到的章節機會：{chapter,actors:[],outcomes:[],opportunities:[{id,place,carrier,clue,basis}],evidence}。只追加一小段，不預寫整章；新人物與地點先在 changes.npcs/locations 建立，位置、雙向通路與原因一致。既有 ID 不能當新人重建；固定真相、地理及既有後果不能改寫。日常閒聊、OOC 不展章，不按回合數催主線；玩家拒絕後不得改頭換面重送線索。story_update 才記錄實際進度，展章本身不代表玩家接受或已進入下一章。
-先在 establish.people 建立本輪首次個別接觸的人（背景人群用 []），每人 {id,name,species,role,description,activity,stance,concern,knowledge:[]}，沿用 ID，不重建已存在者。實際探索需增加具體章節機會時，先在 establish.chapter 填 story_expand 格式；沒有就 null。這是先 Establish 再 Portray，同一次生成完成，不要只在長篇 narration 介紹新人物卻不保存紀錄。
+先在 establish.people 建立本輪首次個別接觸的人（背景人群用 []），每人 {id,name,species,role,description,activity,stance,concern,knowledge:[]}，沿用 ID，不重建已存在者。這是先 Establish 再 Portray，同一次生成完成，不要只在長篇 narration 介紹新人物卻不保存紀錄。
 新人物只寫 establish.people，不在 changes.npcs 重抄；changes.npcs 只更新舊人物。人物每欄一句短句，敘事約一百二十至二百五十字；不重抄未變欄位。
-若格式要求 establish.chapter 的 planning_truth，這是本章首次使用前的私人準備：依給定真相與現有地點寫一個可選機會，evidence 使用同一真相 ID，標示私人準備的來源，不是當下公開見聞。這不代表玩家已探索、接受、發現線索或推進章節；日常/OOC 仍正常回應，不因私人備註在敘事催主線。已準備的章節不重寫。
-只回傳 {"player_power_uses":[],"establish":{"people":[],"chapter":null},"narration":"完整故事或 OOC 回覆","changes":{}}。'''
+只回傳 {"player_power_uses":[],"establish":{"people":[]},"narration":"完整故事或 OOC 回覆","changes":{}}。'''
 
 # Same host contract in a shorter form for small local contexts. The original
 # RPG OS source excerpts remain verbatim; no extra model call or story summary.
@@ -59,9 +55,8 @@ current_snapshot 是目前資料，其後 user/assistant 為依序發生的歷�
 player_power_uses 僅列玩家實際嘗試的超自然能力 {ability_id,manifested}；普通動作、工具、假設、提問用 []。沿用 player_ability_record，無既定來源就零作用，不能本輪覺醒、自授或倒造來源；局部作用、感知、精神壓力或被抵抗也算 manifested:true。未登記 ID 留空。
 依人物人格、情緒、關係、所知與代價作自主反應，保留因果、數量、身分、能力、地理、死亡及已發生後果。narration 約一百二十至二百五十字完整故事或 OOC 回覆，不寫技術清單、內部 ID、選項，不要求玩家操作檔案。
 changes 只列實際變化，無則 {}；沿用人物與地點 ID，移動、裝備、外顯狀況同步保存。scene_people 是未載入詳情的在場索引，nearby_characters 在鄰處；不可重建、搬人或使遠處人物回應。人群先用地點 crowd 背景；首次個別互動只在 establish.people 建立一至三名 {id,name,species,role,description,activity,stance,concern,knowledge:[]}，每欄短句。原人物更新 changes.npcs；持續交往才 developed。scene_focus 列本輪互動 ID，同處不等於聽到私語。
-公開人物筆記 changes.player_view 與 npcs 並列；facts 用主題鍵及 {text,kind:said|observed,evidence}，relationship/condition 用 {text,evidence}。evidence 摘錄本輪 narration 至少四字；只存玩家已學內容，不公開內心。只有公開筆記用 text/evidence，內部 encounter 各值仍是字串。重要共同經歷可寫人物 memory_note:{text,evidence}；inner_life.memories 是陣列，不能改寫舊事。
-story_director 是私密規劃，低於現況與玩家自主。日常/OOC 不推進主線，不按回合催促，不重送拒絕線索，不移人移地、復活或取消後果。探索才在 establish.chapter 或 changes.story_expand 追加本輪用到的小段，沿用固定真相、既有 ID，人物地點先建立再依賴，沒有則 null。若格式要求 planning_truth，首次私人準備的 evidence 使用同一真相 ID；不代表公開、接受或進展。實際進展才記 changes.story_update {chapter,opportunities:{機會ID:presented|followed|declined|lost},revealed:[真相ID],status:active|paused|resolved|abandoned,summary,evidence}，evidence 摘錄本輪敘事。
-只回傳 {"player_power_uses":[],"establish":{"people":[],"chapter":null},"narration":"完整自然回覆","changes":{}}；未變欄位不重抄，資料整理不得混入 narration。'''
+重要共同經歷可寫人物 memory_note:{text,evidence}；evidence 摘錄本輪敘事，inner_life.memories 是陣列，不能改寫舊事。
+只回傳 {"player_power_uses":[],"establish":{"people":[]},"narration":"完整自然回覆","changes":{}}；未變欄位不重抄，資料整理不得混入 narration。'''
 
 
 def working_people(people, text, memory_limit=6):
@@ -74,25 +69,15 @@ def working_people(people, text, memory_limit=6):
         if isinstance(life,dict):
             if isinstance(life.get('memories'),list):life['memories']=recall(life['memories'],text,memory_limit)
             if isinstance(life.get('personality_history'),list):life['personality_history']=recall(life['personality_history'],text,2)
-        profile=npc.get('player_view',{})
-        if isinstance(profile,dict):
-            if isinstance(profile.get('facts'),dict):profile['facts']={key:{field:value for field,value in note.items() if field in ('text','kind')} for key,note in profile['facts'].items()}
-            for field in ('relationship','condition'):
-                if isinstance(profile.get(field),dict):profile[field]={'text':profile[field]['text']}
+        npc.pop('player_view',None)
     return people
 
 
-PUBLIC_NOTE={'type':'object','properties':{'text':{'type':'string','minLength':1,'maxLength':240},
+MEMORY_NOTE={'type':'object','properties':{'text':{'type':'string','minLength':1,'maxLength':240},
     'evidence':{'type':'string','minLength':4,'maxLength':240}},'required':['text','evidence'],'additionalProperties':False}
-PUBLIC_VIEW={'type':'object','properties':{
-    'facts':{'type':'object','additionalProperties':{'type':'object','properties':{
-        **PUBLIC_NOTE['properties'],'kind':{'type':'string','enum':['said','observed']}},
-        'required':['text','kind','evidence'],'additionalProperties':False}},
-    'relationship':PUBLIC_NOTE,'condition':PUBLIC_NOTE},'additionalProperties':False}
 NPC_PATCH={'type':'object','properties':{
     'detail_level':{'type':'string','enum':['incidental','developed']},
-    'memory_note':PUBLIC_NOTE,
-    'player_view':PUBLIC_VIEW,
+    'memory_note':MEMORY_NOTE,
     **{key:{'type':'string'} for key in ('name','description','location','role','species','public_name','background','goal','equipment_notes')},
     **{key:{'type':'boolean'} for key in ('known','alive')},
     'conditions':{'type':'array','items':{'type':'string'}},
@@ -118,21 +103,7 @@ SCHEMA={'type':'object','properties':{
     'changes':{'type':'object','properties':{
         **{key:{'type':'object','additionalProperties':True} for key in ('pc','canon','world','contract')},
         'npcs':{'type':'object','additionalProperties':NPC_PATCH},
-        'player_view':{'type':'object','additionalProperties':PUBLIC_VIEW},
         'scene_focus':{'type':'array','maxItems':8,'items':{'type':'string'}},
-        'story_expand':{'type':'object','properties':{
-            'chapter':{'type':'string'},'actors':{'type':'array','maxItems':4,'items':{'type':'string'}},
-            'outcomes':{'type':'array','maxItems':4,'items':{'type':'string','maxLength':240}},
-            'opportunities':{'type':'array','maxItems':3,'items':{'type':'object','properties':{
-                key:{'type':'string','minLength':1,'maxLength':220} for key in ('id','place','carrier','clue','basis')},
-                'required':['id','place','carrier','clue','basis'],'additionalProperties':False}},
-            'evidence':{'type':'string','minLength':4,'maxLength':240}},
-            'required':['chapter','actors','outcomes','opportunities','evidence'],'additionalProperties':False},
-        'story_update':{'type':'object','properties':{
-            'chapter':{'type':'string'},'opportunities':{'type':'object','additionalProperties':{'type':'string','enum':['presented','followed','declined','lost']}},
-            'revealed':{'type':'array','items':{'type':'string'}},'status':{'type':'string','enum':['active','paused','resolved','abandoned']},
-            'summary':{'type':'string','maxLength':240},'evidence':{'type':'string','minLength':4,'maxLength':240}},
-            'required':['evidence'],'additionalProperties':False},
         **{key:{'type':'object','additionalProperties':{'type':'object','additionalProperties':True}}
            for key in ('locations','abilities','item_catalog')},
         'facts_add':{'type':'array','items':{'anyOf':[{'type':'string'},{'type':'object','additionalProperties':True}]}},
@@ -147,9 +118,8 @@ from .world_schema import BILINGUAL_NAME
 NEW_PERSON['properties']['name']=dict(BILINGUAL_NAME)
 SCHEMA['properties']={key:value for key,value in [
     ('player_power_uses',SCHEMA['properties']['player_power_uses']),
-    ('establish',{'type':'object','properties':{'people':{'type':'array','maxItems':3,'items':NEW_PERSON},
-        'chapter':{'anyOf':[{'type':'null'},SCHEMA['properties']['changes']['properties']['story_expand']]}},
-        'required':['people','chapter'],'additionalProperties':False}),
+    ('establish',{'type':'object','properties':{'people':{'type':'array','maxItems':3,'items':NEW_PERSON}},
+        'required':['people'],'additionalProperties':False}),
     ('narration',SCHEMA['properties']['narration']),('changes',SCHEMA['properties']['changes'])]}
 SCHEMA['required']=['player_power_uses','establish','narration','changes']
 
@@ -167,27 +137,6 @@ def reply_schema(state):
     identity=state.get('canon',{}).get('actors',{}).get(state['pc']['id'],{})
     ids=list(dict.fromkeys([*state['pc'].get('spells',[]),*identity.get('powers',[]),'']))
     schema['properties']['player_power_uses']['items']['properties']['ability_id']={'type':'string','enum':ids}
-    if state.get('story'):
-        chapter=schema['properties']['establish']['properties']['chapter']['anyOf'][1]
-        chapter['properties']['chapter']={'type':'string','enum':[row['id'] for row in state['story']['blueprint']['chapters']]}
-        story=state['story'];progress=story['progress']
-        pending=next((row for row in story['blueprint']['chapters'] if row['id']==progress['chapter'] and row.get('detail_status')=='outline'),None)
-        if story.get('generation')=='progressive' and progress['status']=='active' and pending and pending['reveals']:
-            truth=next(row for row in story['blueprint']['truths'] if row['id']==pending['reveals'][0])
-            chapter['properties'].update(chapter={'type':'string','enum':[pending['id']]},
-                planning_truth={'type':'string','enum':[truth['id']]},evidence={'type':'string','enum':[truth['id']]})
-            chapter['required'].append('planning_truth')
-            chapter['properties']['opportunities'].update(minItems=1,maxItems=1)
-            offer=chapter['properties']['opportunities']['items']['properties']
-            offer.update(id={'type':'string','enum':[pending['id']+'_prepared']},
-                place={'type':'string','enum':[state['pc']['location']]},carrier={'type':'string','enum':['environment']})
-            if pending['opportunities']:
-                # The opening already has a real anchor. Prepare its possible
-                # directions without inventing another copy of the same clue.
-                chapter['properties']['opportunities'].update(minItems=0,maxItems=0)
-            chapter['properties']['actors'].update(maxItems=0)
-            chapter['properties']['outcomes'].update(minItems=1,maxItems=1)
-            schema['properties']['establish']['properties']['chapter']=chapter
     return schema
 
 
@@ -213,7 +162,6 @@ def establish_details(state,result):
     # Allocated IDs also allow a newly learned name/condition to be recorded
     # after the dialogue; an unused slot is never itself a fictional person.
     changes['npcs']={key:value for key,value in npcs.items() if key in state['npcs'] or key in established}
-    if isinstance(foundation.get('chapter'),dict):changes.setdefault('story_expand',foundation['chapter'])
     return result
 
 
@@ -297,9 +245,6 @@ def reply(state,text,base_url,recent=None,state_provenance=None):
     # Full plans stay on disk. Retrieve only the current chapter and relevant
     # opportunities, rather than repeatedly feeding the entire future story.
     context.pop('story',None)
-    from .story_director import context as director_context
-    director=director_context(state)
-    if director:context['story_director']=director
     identity=state.get('canon',{}).get('actors',{}).get(state['pc']['id'],{})
     for field in ('role','species'):
         if field in identity:context['pc'].setdefault(field,identity[field])
@@ -328,20 +273,6 @@ def reply(state,text,base_url,recent=None,state_provenance=None):
         place['exits']={target:{field:value for field,value in route.items() if field in ('known','clear','obstruction')} for target,route in place['exits'].items()}
         if key not in near and not any(name.casefold() in original.casefold() for name in name_options(state,key,place)):
             context['locations'][key]={field:place[field] for field in ('name','exits')}
-    if state.get('story'):
-        context['nearby_characters']={key:{'name':npc['name'],'location':npc['location'],'alive':npc['alive'],
-            'description':npc['description'],'personality':npc.get('inner_life',{}).get('personality',{}).get('description'),
-            'anchor':npc.get('anchor',{}),'activity':npc.get('encounter',{}).get('condition'),
-            'knowledge':npc.get('knowledge',[])[:4]}
-            for key,npc in state['npcs'].items() if npc['location'] in near and npc['location']!=state['pc']['location']}
-        # Nearby crowds are an identity index, not a second roomful of private
-        # profiles. Explicitly named people still get selected by normal recall.
-        context['nearby_characters']=dict(list(context['nearby_characters'].items())[:12])
-        for npc in context['nearby_characters'].values():
-            npc.pop('knowledge',None)
-            npc['description']=npc['description'][:120]
-        # Remote canonical detail is retrieved when relevant; the nearby index
-        # supplies fixed identities without duplicating full private profiles.
     active_ids={state['pc']['id'],*context['npcs']}
     if 'canon' in context:
         context['canon']['actors']={key:value for key,value in context['canon']['actors'].items() if key in active_ids}
@@ -384,12 +315,6 @@ def reply(state,text,base_url,recent=None,state_provenance=None):
             # Compact repeated host guidance before discarding actual dialogue.
             instructions=COMPACT_SYSTEM
             messages=compose(past);measured=count(base_url,messages)
-        if measured is not None and measured>limit and director:
-            # Prefer the live scene and recent dialogue to distant plot notes.
-            compact={key:value for key,value in director.items() if key not in ('authority','ending_conflict','established_threads','chapters')}
-            compact['chapter']={key:value for key,value in compact['chapter'].items() if key!='outcomes'}
-            compact['progress']={key:value for key,value in compact['progress'].items() if key in ('chapter','status','revealed','opportunities')}
-            context['story_director']=compact;messages=compose(past);measured=count(base_url,messages)
         # On an 8K backend keep the latest complete exchange before reserving
         # a long metadata tail. This is still one generation, never a summary call.
         if measured is not None and measured>limit and past:
@@ -401,12 +326,6 @@ def reply(state,text,base_url,recent=None,state_provenance=None):
         # first made even a short follow-up lose the dialogue it depended on.
         while measured is not None and measured>limit and len(past)>1:
             past=past[1:];messages=compose(past);measured=count(base_url,messages)
-        if measured is not None and measured>limit and 'story_director' in context:
-            # Keep truths and usable progress IDs even on a crowded turn.
-            core=context['story_director']
-            context['story_director']={key:value for key,value in core.items() if key in ('fixed_truths','central_conflict','chapter','actor_reality','opportunities','progress')}
-            messages=compose(past)
-            measured=count(base_url,messages)
         if measured is not None and measured>limit:
             context['scene_people']=dict(list(context.get('scene_people',{}).items())[:6])
             for npc in context['npcs'].values():
@@ -424,8 +343,6 @@ def reply(state,text,base_url,recent=None,state_provenance=None):
                 keep={state['pc']['id'],*context['npcs']}
                 context['canon']['actors']={key:value for key,value in context['canon']['actors'].items() if key in keep}
                 context['canon']['powers']={key:value for key,value in context['canon']['powers'].items() if value.get('actor') in keep}
-            context['nearby_characters']={key:{field:value for field,value in npc.items() if field in ('name','location','alive','description')}
-                for key,npc in context.get('nearby_characters',{}).items()}
             messages=compose(past);measured=count(base_url,messages)
         if measured is not None and measured>limit and output_max>1200:
             smaller=budget(base_url,1200)
@@ -477,7 +394,7 @@ def record_changes(state,changes,revision,narration=''):
     from .portable import validate_state
     after=copy.deepcopy(state)
     if not isinstance(changes,dict):return after,'incomplete'
-    partial=False;public_patches={};memory_notes={}
+    partial=False;memory_notes={}
     for key in ('pc','npcs','locations','abilities','canon','world','contract','item_catalog'):
         if key in changes:
             if not isinstance(changes[key],dict):partial=True;continue
@@ -489,8 +406,7 @@ def record_changes(state,changes,revision,narration=''):
             if key=='npcs':
                 # A display field accidentally nested in the ID map must never
                 # create a fictional person named after that field.
-                patch={name:value for name,value in patch.items() if name not in ('player_view','story_update')}
-                public_patches={name:value['player_view'] for name,value in patch.items() if 'player_view' in value}
+                patch={name:value for name,value in patch.items() if name!='player_view'}
                 memory_notes={name:value['memory_note'] for name,value in patch.items() if 'memory_note' in value}
                 patch={name:{field:value for field,value in npc.items() if field not in ('player_view','memory_note')} for name,npc in patch.items()}
                 for name,npc in patch.items():
@@ -540,7 +456,7 @@ def record_changes(state,changes,revision,narration=''):
                   'knowledge':[],'conditions':[],
                   'inner_life':{'personality':None,'limits':[],'current_emotions':[],'relationships':{},'memories':[],'personality_history':[]}}
         after['npcs'][key]=merge(defaults,npc)
-    from .player_cards import normalize
+    def normalize(value):return re.sub(r'\s+','',unicodedata.normalize('NFKC',value))
     for key,note in memory_notes.items():
         if key not in after['npcs'] or not isinstance(note,dict):continue
         text=note.get('text');evidence=note.get('evidence')
@@ -558,13 +474,6 @@ def record_changes(state,changes,revision,narration=''):
                 after['canon']['actors'][who]={'species':actor.get('species','未記錄'),'role':actor.get('role','未記錄'),
                     'forms':{'base':actor.get('description','目前形態')},'current_form':'base','powers':[],
                     'source':'RPG OS 主持建立','established_revision':revision}
-    from .player_cards import apply_updates
-    if isinstance(changes.get('player_view'),dict):public_patches.update(changes['player_view'])
-    apply_updates(state,after,public_patches,narration,revision)
-    from .story_director import apply_update as update_story
-    from .story_director import apply_expansion
-    apply_expansion(state,after,changes.get('story_expand'),narration,revision)
-    update_story(state,after,changes.get('story_update'),narration,revision)
     from .scene_memory import remember
     remember(state,after,changes,narration,revision)
     after['revision']=revision

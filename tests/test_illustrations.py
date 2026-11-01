@@ -13,7 +13,6 @@ from kobold_rpg.engine import Engine, RuleError
 from kobold_rpg.illustrations import IllustrationService, endpoint_url, image_bytes, translate_prompt, visual_source, focused_prompt
 from kobold_rpg.library import CampaignLibrary
 from server import make_handler
-from scripts.legacy_images import install, patched_server, FILES
 
 PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j3ioAAAAASUVORK5CYII='
 
@@ -312,7 +311,7 @@ class IllustrationHandlerTests(unittest.TestCase):
         self.engine = Engine(Path(self.tmp.name) / 'world.sqlite3', seed=new_campaign())
         self.library = CampaignLibrary(Path(self.tmp.name) / 'library', self.engine)
         self.handler = make_handler(self.engine, 'http://127.0.0.1:5001', 'test-token', self.library,
-                                     enricher=lambda *args: [],planner=None,gm=None)
+                                     )
         self.service = self.handler.illustrations
         self.service.render = lambda row: PNG
         self.service.translate = lambda *args: 'A rain-soaked stone gate'
@@ -382,35 +381,6 @@ class IllustrationHandlerTests(unittest.TestCase):
             code, raw, _ = self.request('GET', '/api/illustrations/connection')
         self.assertEqual(code, 200)
         self.assertFalse(json.loads(raw)['connected'])
-
-
-class IllustrationInstallerTests(unittest.TestCase):
-    def test_installation_preserves_later_context_work_and_creates_backup(self):
-        with tempfile.TemporaryDirectory() as folder:
-            target = Path(folder)
-            (target / 'kobold_rpg').mkdir()
-            (target / 'kobold_rpg/engine.py').write_text('# fixture')
-            live = Path(__file__).resolve().parent.parent / 'server.py'
-            old = live.read_text().replace('from kobold_rpg.illustrations import with_illustrations\n', '')
-            old = old.replace('return with_illustrations(Handler, engine, model_url, token, library, operation_lock)', 'return Handler')
-            old = old.replace('        server.RequestHandlerClass.illustrations.join()\n', '')
-            old += '\n# Context fix from another task must survive the installer.\n'
-            (target / 'server.py').write_text(old)
-            install(target, dry_run=True)
-            self.assertEqual((target / 'server.py').read_text(), old)
-            self.assertFalse((target / 'illustrations.js').exists())
-            install(target)
-            modified = (target / 'server.py').read_text()
-            self.assertIn('Context fix from another task', modified)
-            self.assertIn('return with_illustrations(', modified)
-            self.assertEqual(patched_server(modified), modified)
-            self.assertTrue(all((target / name).is_file() for name in FILES))
-            backups = list((target / 'image-update-backups').glob('*/server.py'))
-            self.assertEqual(backups[0].read_text(), old)
-
-    def test_changed_handler_structure_is_rejected_before_writing(self):
-        with self.assertRaises(ValueError):
-            patched_server('from pathlib import Path\ndef make_handler():\n    return DifferentHandler\n')
 
 
 if __name__ == '__main__':

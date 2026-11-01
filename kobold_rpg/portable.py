@@ -56,9 +56,6 @@ def validate_state(state):
             raise RuleError('存檔人物基礎不正確。')
         if any(not isinstance(npc[k],str) for k in ('id','name','description','location')) or any(not isinstance(npc[k],list) for k in ('knowledge','conditions')):
             raise RuleError('存檔人物描述格式不正確。')
-        if 'dialogue' in npc:
-            from .dialogue import validate_record
-            validate_record(npc['dialogue'],state['revision'],RuleError)
     for fact in state['facts']:
         if not isinstance(fact,dict) or fact.get('visibility') not in {'public','private'} or not isinstance(fact.get('text'),str):
             raise RuleError('存檔的公開與私人資料不正確。')
@@ -86,9 +83,6 @@ def validate_state(state):
                 if power not in canon['powers'] or canon['powers'][power].get('actor') != owner:
                     raise RuleError('存檔能力擁有人不一致。')
     from .player_cards import validate as validate_player_card
-    if 'story' in state:
-        from .story_director import validate as validate_story
-        validate_story(state['story'],state,RuleError)
     if 'scene_memory' in state:
         memory=state['scene_memory']
         if not isinstance(memory,dict) or memory.get('version')!=1 or not isinstance(memory.get('focus'),dict) or not isinstance(memory.get('contacts'),dict):
@@ -110,12 +104,8 @@ def validate_state(state):
 
 
 def export_file(engine):
-    from .turn_updates import latest
-    if latest(engine):raise RuleError('人物紀錄整理完成後才能下載完整存檔。')
     with engine.connect() as db:
         db.execute('BEGIN')
-        if db.execute("SELECT 1 FROM turn_updates WHERE status!='done' LIMIT 1").fetchone():
-            raise RuleError('人物紀錄整理完成後才能下載完整存檔。')
         state=json.loads(db.execute('SELECT body FROM state WHERE id=1').fetchone()[0])
         journal=[dict(row) for row in db.execute('SELECT * FROM journal ORDER BY revision')]
     payload={'format':FORMAT,'version':1,'created_at':datetime.now(timezone.utc).isoformat(),

@@ -15,6 +15,14 @@ from server import make_handler
 
 
 class GMReplyTests(unittest.TestCase):
+    def test_fresh_campaign_has_only_state_and_journal_tables(self):
+        with tempfile.TemporaryDirectory() as folder:
+            engine=Engine(Path(folder)/'fresh.sqlite3',seed=new_campaign())
+            with engine.connect() as db:
+                tables={row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+            self.assertEqual(tables,{'state','journal'})
+            self.assertEqual(engine.state()['revision'],0)
+
     def test_rules_are_original_rpg_os_gm_cycle_and_freeform(self):
         rules=rules_packet()
         self.assertIn('Understand',rules);self.assertIn('Establish',rules)
@@ -69,9 +77,7 @@ class GMReplyTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             engine=Engine(Path(folder)/'gm.sqlite3',seed=new_campaign());before=engine.state()
             text='唔同佢爭論, 收起刀, 行近佢'
-            with patch('kobold_rpg.engine.check_action',side_effect=AssertionError('no gameplay gate')), \
-                 patch('kobold_rpg.engine.validate_proposal',side_effect=AssertionError('no proposal veto')):
-                result=engine.record_gm_reply(text,{'narration':'你把刀收好，走近她。','changes':{'pc':{'location':'missing_place'}}},'turn',0)
+            result=engine.record_gm_reply(text,{'narration':'你把刀收好，走近她。','changes':{'pc':{'location':'missing_place'}}},'turn',0)
             self.assertEqual(result['status'],'approved')
             after=engine.state();self.assertEqual(after['pc'],before['pc'])
             self.assertEqual(engine.history()[0]['bookkeeping'],'incomplete')
@@ -80,6 +86,20 @@ class GMReplyTests(unittest.TestCase):
 
 
 class GMDefaultAPITests(unittest.TestCase):
+    def test_retired_gameplay_routes_do_not_change_story(self):
+        before=self.engine.state()
+        for path in ('/api/act','/api/draft','/api/propose','/api/approve',
+                     '/api/establish','/api/rewind','/api/grant-spell',
+                     '/api/maintain','/api/updates/retry'):
+            with self.subTest(path=path):
+                conn=http.client.HTTPConnection('127.0.0.1',self.server.server_port,timeout=5)
+                try:
+                    conn.request('POST',path,'{}',{'Content-Type':'application/json','X-RPG-Token':'test'})
+                    response=conn.getresponse();response.read()
+                    self.assertEqual(response.status,404)
+                finally:conn.close()
+        self.assertEqual(self.engine.state(),before)
+
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory();self.addCleanup(self.tmp.cleanup)
         seed=new_campaign();seed['pc']['alive']=False
@@ -90,7 +110,7 @@ class GMDefaultAPITests(unittest.TestCase):
 
     def stop(self):
         self.server.shutdown();self.server.server_close();self.thread.join()
-        self.handler.jobs.join();self.handler.background.join();self.handler.illustrations.join()
+        self.handler.jobs.join();self.handler.illustrations.join()
 
     def send(self,text,request='gm',revision=0):
         conn=http.client.HTTPConnection('127.0.0.1',self.server.server_port,timeout=5)
@@ -126,13 +146,7 @@ class GMDefaultAPITests(unittest.TestCase):
     def test_default_route_has_no_parser_rule_veto_or_second_model_audit(self):
         text='OOC: why can I not use fire magic?'
         raw=json.dumps({'narration':'OOC：目前尚未學會魔法，施法仍要依世界事實裁定。','changes':{}},ensure_ascii=False)
-        with patch('kobold_rpg.model._complete',return_value=raw) as model, \
-             patch('server.interpret',side_effect=AssertionError('no input classifier')), \
-             patch('server.semantic_action',side_effect=AssertionError('no semantic gate')), \
-             patch('server.react',side_effect=AssertionError('no old narration layer')), \
-             patch('server.audit_narration',side_effect=AssertionError('no second audit')), \
-             patch.object(self.engine,'submit',side_effect=AssertionError('no code adjudication')), \
-             patch.object(self.engine,'propose',side_effect=AssertionError('no approval gate')):
+        with patch('kobold_rpg.model._complete',return_value=raw) as model:
             code,result=self.send(text,revision=999)
             self.assertEqual(code,200,result)
             code,retry=self.send(text,revision=999)
@@ -141,16 +155,6 @@ class GMDefaultAPITests(unittest.TestCase):
         self.assertEqual(result['narration'],retry['narration'])
         self.assertEqual(self.engine.state()['revision'],1)
         self.assertEqual(result['views']['status'],'ready')
-
-    def test_pending_old_indexing_does_not_lock_play(self):
-        with self.engine.connect() as db:
-            db.execute("INSERT INTO turn_updates(source_revision,body,status,error) VALUES(0,'{}','error','old parser')")
-        with patch('kobold_rpg.model._complete',return_value='你沒有繼續爭論，安靜地把刀收好。') as model:
-            code,result=self.send('唔同佢爭論, 收起刀, 行近佢')
-        self.assertEqual(code,200,result)
-        self.assertIn('把刀收好',result['narration'])
-        self.assertEqual(result['views']['status'],'ready')
-        model.assert_called_once()
 
     def test_source_correction_saves_only_final_story_and_is_not_replayed(self):
         bad={'player_power_uses':[{'ability_id':'fire','manifested':True}],

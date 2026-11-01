@@ -15,7 +15,6 @@ from contextlib import contextmanager
 from pathlib import Path
 
 from .engine import RuleError
-from .turn_updates import latest as pending_update
 
 STYLE = 'fantasy RPG concept art, painterly illustration, cinematic lighting, rich textures, coherent composition'
 NEGATIVE = 'blurry, low quality, malformed hands, extra fingers, extra limbs, distorted face, text, watermark, logo'
@@ -305,8 +304,6 @@ class IllustrationService:
             if body.get('session_id', '') != self.session():
                 raise RuleError('冒險已切換，請重新整理後再生成圖片。')
             engine = self.current()
-            if pending_update(engine):
-                raise RuleError('人物資料仍在整理，完成後再生成插畫。')
             public = engine.public_state()
             if body.get('revision') != public['revision']:
                 raise RuleError('故事已更新，請重新整理畫面後再生成。')
@@ -347,7 +344,7 @@ class IllustrationService:
                     raise RuleError('冒險已切換，已取消這張排隊插畫。')
                 current = (moment_source(self.current(), row['subject']) if row['kind'] == 'moment'
                            else visual_source(self.current().public_state(), row['kind'], row['subject']))
-                if current['fingerprint'] != row['fingerprint'] or pending_update(self.current()):
+                if current['fingerprint'] != row['fingerprint']:
                     raise RuleError('畫面資料已更新，請重新生成插畫。')
                 row['status'] = 'translating'
                 self._save(row)

@@ -9,7 +9,6 @@ from kobold_rpg.model import _complete
 from kobold_rpg.names import aliases,display
 from kobold_rpg.campaign import new_campaign
 from kobold_rpg.worldgen import generate_world
-from kobold_rpg.play import interpret
 from test_library import fixture
 
 
@@ -61,14 +60,9 @@ class NameTests(unittest.TestCase):
         self.assertIn('交班。',result['description']);self.assertEqual(result['location'],'gate')
         self.assertEqual(display(result,registry),result);self.assertEqual(item['name'],'霧橋鎮北門')
 
-    def test_chinese_and_english_location_input_are_both_recognized(self):
-        state=new_campaign();state['locations']['shelter']['name']='避雨棚（Rain Shelter）'
-        for text in ['我前往避雨棚。','go to Rain Shelter']:
-            self.assertEqual(interpret(state,text)['destination'],'shelter')
-
     def test_missing_english_names_are_repaired_without_renaming_chinese_identity(self):
         candidate=fixture();plan=copy.deepcopy(candidate['plan']);plan['npc']['name']='小禾'
-        with patch('kobold_rpg.worldgen._complete',side_effect=[plan,{'npc':'Xiao He'}]),patch('kobold_rpg.worldgen.audit_narration',return_value=candidate['audit']):
+        with patch('kobold_rpg.worldgen._complete',side_effect=[plan,{'npc':'Xiao He'}]):
             result=generate_world(candidate['preferences'],'http://local')
         self.assertEqual(result['plan']['npc']['name'],'小禾（Xiao He）')
         self.assertEqual(result['seed']['pc']['name'],'阿晴（Ah Ching）')

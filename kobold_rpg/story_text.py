@@ -3,7 +3,7 @@ import re
 
 
 _TAIL=re.compile(r'(?m)^[ \t]*(?:[},][ \t]*)?(?:\{[ \t]*)?["\']?'
-    r'(?:changes|establish|player_power_uses|story_update|scene_focus|npcs)["\']?[ \t]*:[ \t]*(?=[{\[])')
+    r'(?:changes|establish|player_power_uses|scene_focus|npcs)["\']?[ \t]*:[ \t]*(?=[{\[])')
 
 
 def story_text(value):
