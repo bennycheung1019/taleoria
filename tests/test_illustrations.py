@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 from kobold_rpg.campaign import new_campaign
 from kobold_rpg.engine import Engine, RuleError
-from kobold_rpg.illustrations import IllustrationService, endpoint_url, image_bytes, translate_prompt, visual_source, focused_prompt
+from kobold_rpg.illustrations import IllustrationService, endpoint_url, image_bytes, translate_prompt, visual_source, moment_prompt
 from kobold_rpg.library import CampaignLibrary
 from server import make_handler
 
@@ -99,29 +99,34 @@ class IllustrationTests(unittest.TestCase):
         source={'location':{'name':'礦坑','description':'峽谷、吊橋、礦車、帳篷。'},
                 'action':'我仔細看看岩石。','narration':'石面上有三道淺淺的凹痕。',
                 'characters':[{'name':'老麥','description':'礦工'}]}
-        plan={'subject':'the rough rock surface','framing':'close_up','details':'Three shallow grooves in the stone.','background':''}
+        plan={'scene':'Three shallow grooves mark the rough rock surface directly in front of the player.',
+              'framing':'close_up'}
         with patch('kobold_rpg.model._complete',return_value=plan) as model:
             translated=translate_prompt(source,'http://model')
         prompt=translated['prompt'];self.assertEqual(translated['framing'],'close_up')
         model.assert_called_once()
-        self.assertTrue(prompt.startswith('Close-up of the rough rock surface'))
-        self.assertIn('fills the frame',prompt)
+        self.assertTrue(prompt.startswith('Three shallow grooves'))
+        self.assertIn('fills frame',prompt)
         self.assertNotIn('mine',prompt);self.assertNotIn('miner',prompt)
         messages=model.call_args.args[0]
         self.assertEqual(next(iter(json.loads(messages[1]['content']))),'action')
-        self.assertIn('not proof it happened',messages[0]['content'])
-        self.assertIn('reference context only',messages[0]['content'])
+        self.assertIn('only an attempt',messages[0]['content'])
+        self.assertEqual(json.loads(messages[1]['content'])['place'],'礦坑')
+        self.assertNotIn('峽谷',messages[1]['content'])
         self.assertEqual(model.call_args.kwargs['response_schema']['properties']['framing']['enum'],['close_up','medium','wide'])
 
     def test_focus_supports_conversation_and_landscape_without_forcing_closeup(self):
-        for framing,beginning in [('medium','Medium shot'),('wide','Wide establishing view')]:
-            prompt=focused_prompt({'subject':'the visible subject','framing':framing,'details':'Visible details.','background':'Dim light.'})
-            self.assertTrue(prompt.startswith(beginning));self.assertNotIn('tightly cropped',prompt)
+        scene='A traveler speaks with the woman beside the narrow riverside path.'
+        for framing,expected in [('medium','medium shot'),('wide','wide view')]:
+            prompt=moment_prompt({'scene':scene,'framing':framing})
+            self.assertTrue(prompt.startswith(scene));self.assertIn(expected,prompt)
+            self.assertNotIn('tight close-up',prompt)
 
     def test_incomplete_or_unsupported_focus_plan_does_not_silently_become_a_wide_view(self):
-        for plan in ({'prompt':'A mine'}, {'subject':'rock','framing':'macro','details':'grooves','background':''},
-                     {'subject':'rock','framing':'close_up','details':'<think>hidden','background':''}):
-            with self.subTest(plan=plan),self.assertRaises(RuleError):focused_prompt(plan)
+        for plan in ({'prompt':'A mine'}, {'scene':'medium','framing':'medium'},
+                     {'scene':'A clear picture of the object in the scene.','framing':'macro'},
+                     {'scene':'<think>hidden object in the story scene.','framing':'close_up'}):
+            with self.subTest(plan=plan),self.assertRaises(RuleError):moment_prompt(plan)
 
     def test_custom_moment_prompt_keeps_its_selected_framing_without_a_wide_suffix(self):
         self.engine.record_gm_reply('看岩石',{'narration':'你看見石面有三道凹痕。','changes':{}},'rock',0)
@@ -130,9 +135,18 @@ class IllustrationTests(unittest.TestCase):
         self.assertTrue(self.calls[0]['prompt'].startswith('Extreme close-up'))
         self.assertNotIn('wide view',self.calls[0]['prompt'])
 
-    def test_closeup_discards_distant_background_even_when_model_includes_one(self):
-        prompt=focused_prompt({'subject':'small wedge-shaped stones','framing':'close_up','details':'Lodged between wooden beams.','background':'A vast canyon and distant mine entrance.'})
-        self.assertNotIn('canyon',prompt);self.assertNotIn('mine entrance',prompt)
+    def test_moment_translation_excludes_later_picnic_activity(self):
+        source={'action':'我用摺疊野餐墊蓋住她。',
+                'narration':'你把墊子覆蓋在阿美肩上。\n\n她從墊邊探出頭來。\n\n大家開始享用野餐。',
+                'location':{'name':'河畔渡口','description':'幾位居民圍坐吃東西。'}}
+        plan={'scene':'A person drapes the unfolded picnic mat over the woman while her head peeks out.',
+              'framing':'medium'}
+        with patch('kobold_rpg.model._complete',return_value=plan) as model:
+            translated=translate_prompt(source,'http://model')
+        self.assertIn('mat over the woman',translated['prompt'])
+        self.assertNotIn('大家開始享用',model.call_args.args[0][1]['content'])
+        self.assertNotIn('居民圍坐',model.call_args.args[0][1]['content'])
+        self.assertIn('medium shot',translated['prompt'])
 
     def test_closeup_framing_reaches_renderer_without_a_wide_scene_suffix(self):
         self.engine.record_gm_reply('看碎石',{'narration':'碎石卡在木樑縫隙裡。','changes':{}},'rock',0)
