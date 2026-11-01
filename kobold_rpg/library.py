@@ -37,6 +37,7 @@ class CampaignLibrary:
         self.previews = {}
         self.index_path = self.root / 'index.json'
         self.pointer_path = self.root / 'active.json'
+        self.creation_history_path = self.root / 'creation_history.json'
         self.index = json.loads(self.index_path.read_text()) if self.index_path.exists() else {'campaigns': {}, 'saves': {}}
         # Disk paths travel with the library; callers still use absolute paths.
         for group in ('campaigns', 'saves'):
@@ -152,6 +153,39 @@ class CampaignLibrary:
                             for k, row in reversed(list(self.index[group].items()))]
                     for group in ('campaigns', 'saves')}
 
+    @staticmethod
+    def _world_summary(state, opening=''):
+        return {'campaign_id': state['campaign_id'],
+                'title': state['contract'].get('title', ''),
+                'background': state.get('world', {}).get('background', ''),
+                'location': state['locations']['start']['name'] + '：' + state['locations']['start']['description'],
+                'npc': next((person['name'] + '：' + person.get('description', '')
+                             for person in state.get('npcs', {}).values()), ''),
+                'opening': opening,
+                'entry_frame': state.get('world', {}).get('entry_frame', ''),
+                'entry_setting': state.get('world', {}).get('entry_setting', '')}
+
+    def recent_worlds(self, limit=6):
+        """Small prior-opening references; no live campaign is changed."""
+        with self.lock:
+            rows = []
+            if self.creation_history_path.exists():
+                stored = json.loads(self.creation_history_path.read_text())
+                if isinstance(stored, list):
+                    rows.extend(reversed(stored))
+            seen = {row.get('campaign_id') for row in rows}
+            for key in reversed(list(self.index['campaigns'])):
+                if len(rows) >= limit:
+                    break
+                try:
+                    state = self._campaign(key).state()
+                except (RuleError, OSError):
+                    continue
+                if state.get('world', {}).get('background') and state['campaign_id'] not in seen:
+                    rows.append(self._world_summary(state))
+                    seen.add(state['campaign_id'])
+            return rows[:limit]
+
     def preview(self, candidate):
         with self.lock:
             key = uuid.uuid4().hex
@@ -172,6 +206,10 @@ class CampaignLibrary:
             if engine.state()['revision'] == 0:
                 engine.record_gm_reply('【新世界開場】',{'narration':candidate['plan']['opening'],'changes':{}},'world-opening-'+preview_id,0)
             key = self._index_campaign(engine)
+            prior = json.loads(self.creation_history_path.read_text()) if self.creation_history_path.exists() else []
+            if not any(row.get('campaign_id') == candidate['seed']['campaign_id'] for row in prior):
+                prior.append(self._world_summary(candidate['seed'], candidate['plan']['opening']))
+                atomic_json(self.creation_history_path, prior[-50:])
             return self._activate(engine, key)
 
     def save(self, name):

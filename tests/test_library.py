@@ -55,6 +55,17 @@ class LibraryTests(unittest.TestCase):
         self.library.create(preview['preview_id'])
         self.assertEqual(self.library.engine.state()['revision'], 1)
         self.assertTrue(self.library.engine.verify())
+        self.assertEqual(len(json.loads(self.library.creation_history_path.read_text())),1)
+        self.assertEqual(self.library.recent_worlds()[0]['opening'],fixture()['plan']['opening'])
+
+    def test_opening_rejects_implied_player_position_and_inner_thought(self):
+        candidate=fixture()
+        for text in ('小禾笑道：「你坐坐吧。」你站在店門口。',
+                     '小禾正在整理藥草。你腦海中浮現昨天的事。',
+                     '小禾說：「你剛到嗎？」你剛結束工作。'):
+            plan=copy.deepcopy(candidate['plan']);plan['opening']=text
+            with self.assertRaisesRegex(RuleError,'開場替主角'):
+                build_world(plan,candidate['preferences'])
 
     def test_bad_candidate_cannot_replace_current_world(self):
         candidate = fixture(); candidate['seed']['pc']['location'] = 'missing'

@@ -3,6 +3,8 @@ import copy
 import json
 import uuid
 import re
+import secrets
+from difflib import SequenceMatcher
 from .engine import initial_state, RuleError
 from .canon import establish
 from .model import _complete,InvalidJSONError
@@ -22,7 +24,8 @@ WORLD_SYSTEM = '''你是 RPG OS v1.01 的世界建立者。依玩家偏好，用
 NPC 有具體性格、牽掛、顧慮與界線，能溫暖也能堅持，依自身資訊與經歷改變。情緒不等於愛情或服從。
 主角起始能力應符合玩家偏好。普通能力放 skills，超自然能力才放 powers（最多兩項），寫出範圍與限制；沒有則 []。
 不寫未定義的變身、隱藏血統、詛咒、魔法物品或療效。物品是普通具體物件（最多四項）。
-開場約兩段，只使用已建立地點與人物，讓 NPC 有自然的互動契機，不替主角發言、感受、行動或接受任務，也不在開場施放能力。
+開場約兩段，只使用已建立地點與人物，讓 NPC 有自然的互動契機，不替主角發言、感受、行動或接受任務，也不在開場施放能力。第一幕先處理一件無須知道世界歷史也能理解的普通小事；不立即拋出謎樣神器、詛咒、神秘包裹或陌生勢力。後續可隨玩家探索展開奇幻或危險。
+把玩家當成第一次接觸這個世界的人。從熟悉的生活場所、清楚的身分和一件眼前小事開始；題材的危險或奇妙之處可以逐步出現。開場不要堆砌世界歷史、勢力、術語或謎語。NPC 首句說日常可理解的話，不要假設玩家已知道專有名詞；如必須提及新名詞，同句用白話解釋。世界背景亦先說明人們如何生活及眼前發生甚麼事。
 只回傳一個 JSON，不使用 Markdown。必須使用以下完整格式（不要加入其他欄位）：
 {"title":"戰役名稱","background":"約一至兩段的世界背景及眼前局勢","rules":["本世界三至五項具體規則，與 RPG OS 不衝突"],
 "player":{"name":"姓名","species":"種族","role":"身分職業","background":"角色背景","goal":"願望而非保證結局","skills":["普通技能"],"powers":[{"name":"能力名","effect":"具體效果","limits":"範圍與不能做到甚麼"}],"items":[{"name":"物品名","description":"普通物件的具體用途"}]},
@@ -30,6 +33,76 @@ NPC 有具體性格、牽掛、顧慮與界線，能溫暖也能堅持，依自�
 "npc":{"name":"姓名","species":"種族","role":"身分","description":"成年人物的可見外貌與活動","personality":"性格與情感傾向","values":"具體牽掛","concern":"當下顧慮","boundary":"界線","levers":"可打動的具體條件","condition":"身心狀況與活動","priorities":"優先事項與限制","appraisal":"察覺及評價或資訊限制","attraction":"當前吸引或明確尚未建立，不用分數","stance":"參與態度"},
 "opening":"兩段繁體中文開場，停在玩家的下一個選擇之前"}
 '''
+
+
+# These are starting situations, not plots or lore. The model adapts one to
+# the requested genre while leaving the player's first choice open.
+ENTRY_FRAMES = (
+    ('neighborhood', '熟悉的街道或鄰里：從一件看得見的日常小事開始。'),
+    ('home', '住處或暫住處：有人因一件具體的小事來訪。'),
+    ('shop', '店舖或市場：一次普通的交易或工作引出互動。'),
+    ('public', '茶館、食堂或其他公共場所：一場簡單的交談開始。'),
+    ('arrival', '剛抵達有人居住的地方：先讓玩家看見去處和一位能交談的人。'),
+    ('community', '社區活動或聚會：先交代大家正在做甚麼。'),
+)
+
+ENTRY_SETTINGS = (
+    ('riverside', '有人居住的河畔街區，白天有渡口、住家與小店。'),
+    ('seaside', '有人居住的海邊小鎮，白天有漁市、住家與碼頭。'),
+    ('hill', '有人居住的山間村落，白天有果園、住家與驛站。'),
+    ('garden', '有人居住的城郊街區，白天有菜園、住家與街市。'),
+    ('city', '有人居住的城內街道，白天有住宅、店舖與公共廣場。'),
+    ('plains', '有人居住的平原村鎮，白天有農田、住家與食堂。'),
+)
+
+# Broad setting motifs used only to reject an accidental reprise of a prior
+# campaign. They are never copied into the new generation prompt.
+SETTING_MOTIFS = {
+    'ash': r'灰|塵|霧|煙|蝕',
+    'mine': r'礦|坑道|採掘',
+    'industrial': r'鐵鏽|銹|鋼架|機械殘骸|工業',
+    'ruins': r'廢棄|廢墟|半塌|殘骸|荒地',
+    'scavenger': r'拾荒|礦工',
+}
+
+
+def _creative_direction(prior_worlds):
+    """Choose a new, everyday entry without copying prior prose into the prompt."""
+    prior = [row for row in (prior_worlds or []) if isinstance(row, dict)][:6]
+    recent_frames = {row.get('entry_frame') for row in prior[:3]}
+    options = [frame for frame in ENTRY_FRAMES if frame[0] not in recent_frames]
+    frame = secrets.choice(options or [f for f in ENTRY_FRAMES if f[0] != prior[0].get('entry_frame')]
+                           or list(ENTRY_FRAMES))
+    recent_settings = {row.get('entry_setting') for row in prior[:3]}
+    settings = [setting for setting in ENTRY_SETTINGS if setting[0] not in recent_settings]
+    setting = secrets.choice(settings or list(ENTRY_SETTINGS))
+    return frame, setting
+
+
+def _similar_to_prior(plan, prior_worlds):
+    """Catch copied openings; this is a guard, not a claim of semantic uniqueness."""
+    def plain(value):
+        return re.split(r'[（(]', str(value or ''))[0].strip().casefold()
+    current_setting = ' '.join(str(plan.get(key, '')) for key in ('title', 'background'))
+    current_setting += ' ' + str(plan['location']['description']) + ' ' + str(plan['npc']['role'])
+    current_motifs = {key for key, pattern in SETTING_MOTIFS.items() if re.search(pattern, current_setting)}
+    for old in (prior_worlds or [])[:6]:
+        if not isinstance(old, dict):
+            continue
+        prior_setting = ' '.join(str(old.get(key, '')) for key in ('title', 'background', 'location', 'npc'))
+        prior_motifs = {key for key, pattern in SETTING_MOTIFS.items() if re.search(pattern, prior_setting)}
+        if len(current_motifs & prior_motifs) >= 2:
+            return True
+        for current, prior in ((plan['title'], old.get('title')),
+                               (plan['npc']['name'], old.get('npc')),
+                               (plan['location']['name'], old.get('location'))):
+            if plain(current) and plain(current) == plain(prior):
+                return True
+        for current, prior in ((plan['background'], old.get('background')),
+                               (plan['location']['description'], old.get('location'))):
+            if prior and SequenceMatcher(None, str(current), str(prior)).ratio() > .55:
+                return True
+    return False
 
 
 def _text(value, label, maximum=4000):
@@ -49,7 +122,12 @@ def validate_opening(plan):
     if re.search(r'[A-Za-z]{3,}', prose):
         raise RuleError('開場混入了整句英文，需要改用繁體中文。')
     name = re.escape(plan['player']['name'].split('（')[0].split('(')[0])
-    if re.search(r'(?:你|主角|' + name + r')(?:便|於是|緩緩地?|立刻|慢慢地?)?(?:推開|走進|走向|走到|走出|拿起|坐下|轉身|說道?|問道?|詢問|感到|心想|決定|接受|答應)', opening):
+    # NPC dialogue may address the player. Outside dialogue, the narrator may
+    # describe visible surroundings but cannot invent the PC's position,
+    # possessions, recent actions or inner thoughts.
+    narration = re.sub(r'「[^」]*」', '', opening)
+    subject = r'(?:你|主角|' + name + r')'
+    if re.search(subject + r'(?:便|於是|緩緩地?|立刻|慢慢地?)?(?:推開|走進|走向|走到|走出|拿起|坐下|轉身|說道?|問道?|詢問|感到|心想|決定|接受|答應|站在|坐在|正|剛|已|手裡|手中|腦海|心裡)', narration):
         raise RuleError('開場替主角選擇了動作、台詞或感受，需要重新呈現。')
 
 
@@ -209,8 +287,9 @@ def build_world(plan, prefs):
     return state
 
 
-def generate_plan(raw, model_url, scene_trial=False):
+def generate_plan(raw, model_url, scene_trial=False, prior_worlds=None):
     prefs = preferences(raw)
+    frame, setting = _creative_direction(prior_worlds)
     schema=copy.deepcopy(WORLD_SCHEMA)
     def bound(node):
         if node.get('type')=='string':node.update(minLength=1,maxLength=120)
@@ -221,7 +300,7 @@ def generate_plan(raw, model_url, scene_trial=False):
     schema['properties']['background']['maxLength']=240
     schema['properties']['opening']['maxLength']=400
     schema['properties']['location']['properties']['nearby']['maxItems']=1
-    instruction=WORLD_SYSTEM+'\n這是快速開局。世界背景與開場各約八十字，開場必須在完整句子的句號、問號或驚嘆號結束；其他欄位各用一個短句（約十五至三十字），只建立起點與最多一個附近地點。普通人物不必有秘密或任務。不預寫後續場景、對白與遠處人物。保留玩家明確要求；細節可在實際接觸時再建立。'
+    instruction=WORLD_SYSTEM+'\n這是快速開局。世界背景與開場各約八十字，開場必須在完整句子的句號、問號或驚嘆號結束；其他欄位各用一個短句（約十五至三十字），只建立起點與最多一個附近地點。普通人物不必有秘密或任務。不預寫後續場景、對白與遠處人物。保留玩家明確要求；細節可在實際接觸時再建立。\n下方「開局方向」與「生活環境」是今次新世界的具體起點，須依玩家題材調整，但不可改為另一種環境。若玩家明確指定起點，以玩家要求為準。即使題材黑暗，第一幕仍應有正常生活；不要把灰霧、礦坑、工業廢墟、拾荒者或年長引路人當作隨機世界的預設。第一幕不必有世界危機或神秘物件，留到玩家探索後才逐步建立。只改人名或建築名稱不算新故事。'
     requested=prefs['player_name']
     if requested:
         pair=PAIR.fullmatch(requested)
@@ -231,14 +310,23 @@ def generate_plan(raw, model_url, scene_trial=False):
             pattern=('^'+NAME_PREFIX+r'{1,40}（'+literal+r'）$' if re.fullmatch(r"[A-Za-z][A-Za-z '\-]*",requested)
                      else '^'+literal+r"（[A-Za-z][A-Za-z '-]{0,80}）$")
             schema['properties']['player']['properties']['name']={'type':'string','pattern':pattern}
-    with stage('建立世界與人物'):
-      try:
-        plan = normalize_plan(_complete([{'role': 'system', 'content': '已核對的 RPG OS v1.01 原規則摘錄：\n' + excerpts('observe')+'\n\n'+instruction},
-                      {'role': 'user', 'content': json.dumps(prefs, ensure_ascii=False)}], model_url, 2400, 0.65, timeout=600,response_schema=schema))
-      except InvalidJSONError as exc:
-        raise RuleError('新世界草案未能完整產生，尚未建立或切換世界。你的設定與目前故事仍保留，請稍後再試。') from exc
-    if not isinstance(plan,dict) or not all(isinstance(plan.get(key),dict) for key in ('player','npc','location')) or not all(isinstance(plan[key].get('name'),str) for key in ('player','npc','location')):
-        raise RuleError('世界草案資料不完整，尚未建立或切換世界，請重新生成。')
+    for attempt in range(2):
+        with stage('建立世界與人物' if attempt == 0 else '重新構思不同開場'):
+          try:
+            plan = normalize_plan(_complete([{'role': 'system', 'content': '已核對的 RPG OS v1.01 原規則摘錄：\n' + excerpts('observe')+'\n\n'+instruction},
+                          {'role': 'user', 'content': json.dumps({
+                              '玩家偏好': {**prefs, 'wishes': '' if prefs['wishes'].casefold() == 'random' else prefs['wishes'],
+                                       'player_background': '' if prefs['player_background'].casefold() == 'random' else prefs['player_background']},
+                              '開局方向': frame[1], '生活環境': setting[1]}, ensure_ascii=False)}], model_url, 2400, 0.65, timeout=600,response_schema=schema))
+          except InvalidJSONError as exc:
+            raise RuleError('新世界草案未能完整產生，尚未建立或切換世界。你的設定與目前故事仍保留，請稍後再試。') from exc
+        if not isinstance(plan,dict) or not all(isinstance(plan.get(key),dict) for key in ('player','npc','location')) or not all(isinstance(plan[key].get('name'),str) for key in ('player','npc','location')):
+            raise RuleError('世界草案資料不完整，尚未建立或切換世界，請重新生成。')
+        if prefs['wishes'].casefold() not in ('', 'random') or not _similar_to_prior(plan,prior_worlds):
+            break
+        if attempt:
+            raise RuleError('新草案與已有世界太相似，尚未建立或切換故事，請重新生成。')
+        frame, setting = _creative_direction([{'entry_frame':frame[0], 'entry_setting':setting[0]}, *(prior_worlds or [])])
     # A local 8B model can ignore language/authorship instructions even while
     # producing valid JSON. Repair only opening prose, never grant new facts.
     if isinstance(plan, dict) and isinstance(plan.get('player'), dict) and isinstance(plan.get('opening'), str):
@@ -290,12 +378,14 @@ def generate_plan(raw, model_url, scene_trial=False):
             rows=[];scene_setup={'status':'failed','error':str(exc)}
         plan['location']['objects']=rows
     state = build_world(plan, prefs)
+    state['world']['entry_frame'] = frame[0]
+    state['world']['entry_setting'] = setting[0]
     result={'plan':plan,'preferences':prefs,'seed':state}
     if scene_setup is not None:result['scene_setup']=scene_setup
     return result
 
 
-def generate_world(raw, model_url, scene_trial=False):
+def generate_world(raw, model_url, scene_trial=False, prior_worlds=None):
     """Create a playable opening without a future story blueprint."""
-    candidate=generate_plan(raw,model_url,scene_trial=scene_trial)
+    candidate=generate_plan(raw,model_url,scene_trial=scene_trial,prior_worlds=prior_worlds)
     return candidate

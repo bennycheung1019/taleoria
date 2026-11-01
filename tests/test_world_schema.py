@@ -47,6 +47,43 @@ class WorldSchemaTests(unittest.TestCase):
         self.assertNotIn('audit',result)
         self.assertNotIn('story',result['seed'])
 
+    def test_new_world_uses_familiar_entry_without_copying_prior_prose(self):
+        candidate=fixture()
+        prior=[{'title':'舊戰役','background':'灰霧籠罩礦區',
+                'location':'礦井入口','npc':'年長礦工','opening':'年長礦工在礦井前說話。',
+                'entry_frame':'neighborhood','entry_setting':'hill'}]
+        with patch('kobold_rpg.worldgen._complete',return_value=candidate['plan']) as complete:
+            result=generate_world({**candidate['preferences'],'wishes':'random',
+                                   'player_background':'random'},'http://local',prior_worlds=prior)
+        request=json.loads(complete.call_args.args[0][1]['content'])
+        self.assertEqual(request['玩家偏好']['wishes'],'')
+        self.assertEqual(request['玩家偏好']['player_background'],'')
+        self.assertNotIn('避免重複',request)
+        self.assertNotIn('灰霧',complete.call_args.args[0][1]['content'])
+        self.assertNotEqual(result['seed']['world']['entry_frame'],'neighborhood')
+        self.assertNotEqual(result['seed']['world']['entry_setting'],'hill')
+        system=complete.call_args.args[0][0]['content']
+        self.assertIn('第一次接觸這個世界',system)
+        self.assertIn('只改人名或建築名稱不算新故事',system)
+        self.assertEqual(complete.call_count,1)
+
+    def test_copied_world_is_retried_then_refused_if_still_copied(self):
+        candidate=fixture();prior=[{'title':'舊戰役','background':'河港小鎮以渡運與藥草生意維生。',
+                                    'location':'河邊店門（Riverside Shop Entrance）',
+                                    'npc':'小禾（Xiao He）'}]
+        with patch('kobold_rpg.worldgen._complete',return_value=candidate['plan']) as complete:
+            with self.assertRaisesRegex(RuleError,'太相似'):
+                generate_world({**candidate['preferences'],'wishes':'random'},'http://local',prior_worlds=prior)
+        self.assertEqual(complete.call_count,2)
+
+    def test_reworded_setting_motifs_are_also_rejected(self):
+        from kobold_rpg.worldgen import _similar_to_prior
+        plan=copy.deepcopy(fixture()['plan'])
+        plan['background']='城裡的薄霧沾著鐵鏽味，居民照常開店。'
+        prior=[{'title':'別的標題','background':'礦坑覆滿灰燼，鋼架已鏽蝕。',
+                'location':'另一處','npc':'另一人'}]
+        self.assertTrue(_similar_to_prior(plan,prior))
+
     def test_opening_cut_at_old_limit_is_rewritten_before_creation(self):
         candidate=fixture();plan=copy.deepcopy(candidate['plan'])
         plan['opening']='河水聲。'+'他'*236

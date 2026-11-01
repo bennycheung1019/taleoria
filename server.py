@@ -100,7 +100,8 @@ def make_handler(engine, model_url, token, library=None, gm=rpg_os_reply, save_c
                     Handler.illustrations.model_url=value
                     result={'model_url':value}
                 elif path == '/api/world/draft' and library is not None:
-                    candidate=generate_world(body.get('preferences'), model_url, scene_trial=True)
+                    candidate=generate_world(body.get('preferences'), model_url, scene_trial=True,
+                                             prior_worlds=library.recent_worlds())
                     result=display(library.preview(candidate),aliases(candidate['seed']))
                 elif path == '/api/world/create' and library is not None:
                     result = library.create(body['preview_id'])
